@@ -1,0 +1,13 @@
+pandas==2.2.2
+numpy==1.26.4
+
+rapidfuzz==3.9.0
+recordlinkage==0.16
+
+scikit-learn==1.4.2
+
+streamlit==1.35.0
+
+matplotlib==3.9.0
+
+python-dateutil==2.9.0.post0

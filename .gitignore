@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+
+data/processed/*.csv
+data/reviewed/*.csv
+data/results/*.csv
+
+.streamlit/secrets.toml
+.ipynb_checkpoints/
