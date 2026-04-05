@@ -6,8 +6,10 @@ venv/
 .DS_Store
 
 data/processed/*.csv
+data/processed/*.json
 data/reviewed/*.csv
 data/results/*.csv
+data/results/*.md
 
 .streamlit/secrets.toml
 .ipynb_checkpoints/

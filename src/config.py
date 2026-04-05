@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -22,11 +22,14 @@ class PathConfig:
     labeled_pairs: Path = processed_dir / "labeled_pairs.csv"
 
     review_decisions: Path = reviewed_dir / "review_decisions.csv"
+    generation_manifest: Path = processed_dir / "generation_manifest.json"
 
-    matched_results: Path = results_dir / "matched_pairs.csv"
-    reviewed_results: Path = results_dir / "reviewed_pairs.csv"
-    unresolved_results: Path = results_dir / "unresolved_pairs.csv"
+    classified_pairs: Path = results_dir / "classified_pairs.csv"
+    review_queue: Path = results_dir / "review_queue.csv"
+    review_decisions_results: Path = results_dir / "review_decisions.csv"
+    final_decisions: Path = results_dir / "final_decisions.csv"
     evaluation_results: Path = results_dir / "evaluation_metrics.csv"
+    experiment_summary: Path = results_dir / "experiment_summary.md"
 
 
 # =========================
@@ -114,16 +117,29 @@ class ThresholdConfig:
 class DuplicateConfig:
     duplicate_rate: float = 0.20
     random_seed: int = 42
+    sample_size: int | None = 5000
 
     typo_probability: float = 0.35
     nickname_probability: float = 0.20
     missing_field_probability: float = 0.15
-    zip_mutation_probability: float = 0.20
+    postcode_mutation_probability: float = 0.20
     address_abbreviation_probability: float = 0.30
     case_variation_probability: float = 0.15
     transposition_probability: float = 0.20
 
     num_negative_pairs: int = 5000
+
+
+# =========================
+# REVIEW / EVALUATION CONFIG
+# =========================
+
+
+@dataclass
+class ReviewConfig:
+    manual_review_seconds_per_pair: float = 15.0
+    allow_review_simulation: bool = True
+    default_review_mode: str = "merge"
 
 
 # =========================
@@ -133,12 +149,13 @@ class DuplicateConfig:
 
 @dataclass
 class AppConfig:
-    paths: PathConfig = PathConfig()
-    columns: ColumnConfig = ColumnConfig()
-    blocking: BlockingConfig = BlockingConfig()
-    similarity: SimilarityConfig = SimilarityConfig()
-    thresholds: ThresholdConfig = ThresholdConfig()
-    duplicates: DuplicateConfig = DuplicateConfig()
+    paths: PathConfig = field(default_factory=PathConfig)
+    columns: ColumnConfig = field(default_factory=ColumnConfig)
+    blocking: BlockingConfig = field(default_factory=BlockingConfig)
+    similarity: SimilarityConfig = field(default_factory=SimilarityConfig)
+    thresholds: ThresholdConfig = field(default_factory=ThresholdConfig)
+    duplicates: DuplicateConfig = field(default_factory=DuplicateConfig)
+    review: ReviewConfig = field(default_factory=ReviewConfig)
 
     def validate(self):
         self.similarity.validate()

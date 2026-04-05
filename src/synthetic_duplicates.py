@@ -1,4 +1,5 @@
 import argparse
+import json
 import random
 import re
 import string
@@ -315,18 +316,37 @@ def build_labeled_pairs(
     return labeled_pairs_df
 
 
-def run_pipeline(input_csv: str | None = None, output_dir: str | None = None) -> None:
+def load_source_records(input_path: Path, sample_size: int | None = None) -> pd.DataFrame:
+    raw_df = pd.read_csv(input_path)
+
+    if sample_size is None or sample_size >= len(raw_df):
+        return raw_df
+
+    return raw_df.sample(
+        n=sample_size, random_state=CONFIG.duplicates.random_seed
+    ).reset_index(drop=True)
+
+
+def run_pipeline(
+    input_csv: str | None = None,
+    output_dir: str | None = None,
+    sample_size: int | None = None,
+) -> None:
     CONFIG.validate()
+    cfg = CONFIG.duplicates
     set_random_seed(CONFIG.duplicates.random_seed)
 
     input_path = Path(input_csv) if input_csv else CONFIG.paths.raw_data
     output_path = Path(output_dir) if output_dir else CONFIG.paths.processed_dir
+    requested_sample_size = (
+        CONFIG.duplicates.sample_size if sample_size is None else sample_size
+    )
 
     ensure_directories_exist(
         output_path, CONFIG.paths.reviewed_dir, CONFIG.paths.results_dir
     )
 
-    raw_df = pd.read_csv(input_path)
+    raw_df = load_source_records(input_path, sample_size=requested_sample_size)
     base_df = preprocess_records(raw_df)
     base_df = add_duplicate_metadata(base_df)
 
@@ -343,6 +363,22 @@ def run_pipeline(input_csv: str | None = None, output_dir: str | None = None) ->
     full_records_df.to_csv(output_path / "synthetic_records.csv", index=False)
     ground_truth_df.to_csv(output_path / "ground_truth_duplicates.csv", index=False)
     labeled_pairs_df.to_csv(output_path / "labeled_pairs.csv", index=False)
+    CONFIG.paths.generation_manifest.write_text(
+        json.dumps(
+            {
+                "input_csv": str(input_path),
+                "sample_size": requested_sample_size,
+                "base_record_count": len(base_df),
+                "duplicate_rate": cfg.duplicate_rate,
+                "synthetic_duplicate_count": len(duplicates_df),
+                "random_seed": cfg.random_seed,
+                "match_threshold": CONFIG.thresholds.match_threshold,
+                "non_match_threshold": CONFIG.thresholds.non_match_threshold,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     print("Synthetic duplicate pipeline complete.")
     print(f"Base records: {len(base_df)}")
@@ -350,6 +386,8 @@ def run_pipeline(input_csv: str | None = None, output_dir: str | None = None) ->
     print(f"Total records: {len(full_records_df)}")
     print(f"True duplicate pairs: {len(ground_truth_df)}")
     print(f"Labeled pairs: {len(labeled_pairs_df)}")
+    if requested_sample_size is not None:
+        print(f"Sample size used: {requested_sample_size}")
     print(f"Saved to: {output_path.resolve()}")
 
 
@@ -369,9 +407,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Directory to save generated outputs.",
     )
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=None,
+        help="Optional number of source records to sample before duplicate generation.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run_pipeline(input_csv=args.input, output_dir=args.output)
+    run_pipeline(
+        input_csv=args.input,
+        output_dir=args.output,
+        sample_size=args.sample_size,
+    )
