@@ -21,6 +21,8 @@ from src.review_store import (  # noqa: E402
     save_review_decisions,
     upsert_review_decision,
 )
+from src.similarity import fuzzy_similarity  # noqa: E402
+from src.utils import exact_similarity  # noqa: E402
 
 
 def _load_csv_if_exists(path: Path, *, dtype: str | None = None) -> pd.DataFrame:
@@ -123,8 +125,8 @@ def _build_pair_comparison_df(pair: pd.Series) -> pd.DataFrame:
         ("Date of birth", pair["date_of_birth_a"], pair["date_of_birth_b"], float(pair["sim_dob"])),
         ("Gender", pair["gender_a"], pair["gender_b"], float(pair["sim_gender"])),
         ("Address", pair["address_a"], pair["address_b"], float(pair["sim_address"])),
-        ("City", pair["city_a"], pair["city_b"], None),
-        ("State", pair["state_a"], pair["state_b"], None),
+        ("City", pair["city_a"], pair["city_b"], fuzzy_similarity(pair["city_a"], pair["city_b"])),
+        ("State", pair["state_a"], pair["state_b"], exact_similarity(pair["state_a"], pair["state_b"])),
         ("Postcode", pair["postcode_a"], pair["postcode_b"], float(pair["sim_postcode"])),
     ]
 
