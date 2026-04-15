@@ -16,6 +16,7 @@ from .review_store import (
     save_review_queue,
     simulate_review_decisions,
 )
+from .reporting import generate_report_artifacts
 from .similarity import build_pairwise_dataset, compute_similarity_features
 from .synthetic_duplicates import run_pipeline as generate_synthetic_data
 from .utils import ensure_directories_exist
@@ -113,8 +114,11 @@ def _write_experiment_summary(
     generation_manifest: dict,
     candidate_pair_count: int,
     review_queue_count: int,
+    report_tables: dict[str, pd.DataFrame],
 ) -> None:
     comparison_table = metrics_df.to_string(index=False)
+    benchmark_table = report_tables["benchmark_table"].to_string(index=False)
+    workload_table = report_tables["workload_table"].to_string(index=False)
     interpretation = _build_interpretation(metrics_df, review_mode)
     lines = [
         "# Experiment Summary",
@@ -136,11 +140,24 @@ def _write_experiment_summary(
         "",
         f"- Candidate pairs generated after blocking: {candidate_pair_count}",
         f"- Uncertain pairs written to the review queue: {review_queue_count}",
-        f"- Evaluation table compares `manual_only`, `ai_only`, and `ai_human_hitl`.",
+        "- Evaluation compares a simulated clerical-review benchmark over the blocked candidate set, "
+        "`ai_only`, and `ai_human_hitl`.",
         "",
         "## Interpretation",
         "",
         interpretation,
+        "",
+        "## Benchmark Table",
+        "",
+        "```",
+        benchmark_table,
+        "```",
+        "",
+        "## Workload Table",
+        "",
+        "```",
+        workload_table,
+        "```",
         "",
         "## Full Comparison",
         "",
@@ -223,6 +240,12 @@ def run_experiment(
     metrics_df = compare_approaches(resolved_pairs_df, ground_truth_df, runtime_seconds)
     resolved_pairs_df.to_csv(CONFIG.paths.final_decisions, index=False)
     metrics_df.to_csv(CONFIG.paths.evaluation_results, index=False)
+    report_tables = generate_report_artifacts(
+        metrics_df=metrics_df,
+        classified_pairs_df=classified_pairs_df,
+        final_decisions_df=resolved_pairs_df,
+        review_decisions_df=review_decisions_df,
+    )
     _write_experiment_summary(
         metrics_df=metrics_df,
         path=CONFIG.paths.experiment_summary,
@@ -232,6 +255,7 @@ def run_experiment(
         generation_manifest=generation_manifest,
         candidate_pair_count=len(candidate_pairs_df),
         review_queue_count=len(review_queue_df),
+        report_tables=report_tables,
     )
 
     return {
@@ -242,4 +266,5 @@ def run_experiment(
         "final_decisions": resolved_pairs_df,
         "metrics": metrics_df,
         "review_mode": review_mode_label,
+        **report_tables,
     }

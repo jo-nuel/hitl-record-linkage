@@ -30,6 +30,15 @@ class PathConfig:
     final_decisions: Path = results_dir / "final_decisions.csv"
     evaluation_results: Path = results_dir / "evaluation_metrics.csv"
     experiment_summary: Path = results_dir / "experiment_summary.md"
+    benchmark_table: Path = results_dir / "benchmark_comparison_table.csv"
+    workload_table: Path = results_dir / "workload_summary_table.csv"
+    decision_counts_table: Path = results_dir / "decision_counts_table.csv"
+    figures_dir: Path = results_dir / "figures"
+    metrics_figure: Path = figures_dir / "benchmark_metrics.png"
+    workload_figure: Path = figures_dir / "review_workload.png"
+    decision_distribution_figure: Path = figures_dir / "decision_distribution.png"
+    similarity_distribution_figure: Path = figures_dir / "similarity_distribution.png"
+    resolution_flow_figure: Path = figures_dir / "resolution_flow.png"
 
 
 # =========================

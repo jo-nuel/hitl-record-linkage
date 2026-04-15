@@ -76,11 +76,12 @@ def _pairs_to_key_set(
 
 def _manual_baseline_keys(classified_pairs_df: pd.DataFrame) -> set[tuple[str, str]]:
     """
-    Simplified clerical-review baseline for the research prototype.
+    Simulated clerical-review baseline for the research prototype.
 
     This assumes a human reviewer inspects every blocked candidate pair and correctly
     identifies every true duplicate within that candidate set. It is therefore a
-    benchmark for full manual review effort, not a literal interactive workflow.
+    benchmark for full clerical review effort within the blocked candidate set, not a
+    literal end-to-end manual matching workflow across all possible record pairs.
     """
     manual_matches = classified_pairs_df[classified_pairs_df["is_duplicate"] == 1]
     return set(zip(manual_matches["record_id_a"], manual_matches["record_id_b"]))

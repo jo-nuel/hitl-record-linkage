@@ -26,11 +26,11 @@ The model is **not retrained** from review feedback in this Week 8 prototype. Th
 
 The evaluation compares exactly three approaches:
 
-- `manual_only`: a simplified clerical-review benchmark where every blocked candidate pair is assumed to be manually inspected against ground truth
+- `manual_only`: a simulated clerical-review benchmark where every blocked candidate pair is assumed to be inspected against ground truth
 - `ai_only`: threshold-based automated matching with no human review of uncertain pairs
 - `ai_human_hitl`: automated matching plus human review of only `Review Needed` pairs
 
-The `manual_only` baseline is intentionally simple and is included as a research benchmark for full review effort, not as a literal interactive workflow.
+The `manual_only` identifier is kept in the evaluation outputs for consistency, but it does **not** mean full end-to-end manual matching across all possible pairs. It represents full clerical review of the **blocked candidate set** only, and is included as a simulated benchmark for review effort rather than a literal interactive experiment.
 
 ## Setup
 
@@ -54,6 +54,9 @@ Main outputs:
 - [data/results/final_decisions.csv](data/results/final_decisions.csv)
 - [data/results/evaluation_metrics.csv](data/results/evaluation_metrics.csv)
 - [data/results/experiment_summary.md](data/results/experiment_summary.md)
+- [data/results/benchmark_comparison_table.csv](data/results/benchmark_comparison_table.csv)
+- [data/results/workload_summary_table.csv](data/results/workload_summary_table.csv)
+- `data/results/figures/` for presentation-ready charts
 
 ## Run The Manual HITL Demo
 
@@ -68,6 +71,13 @@ python scripts/run_pipeline.py --regenerate-data --review-mode merge --sample-si
 ```bash
 streamlit run app/streamlit_app.py
 ```
+
+The Streamlit app includes:
+
+- an overview page with current run status
+- benchmark and workload tables
+- presentation-ready charts generated from real outputs
+- the live review queue for uncertain pairs
 
 3. After saving manual decisions, re-run the pipeline to merge them into the final outputs:
 

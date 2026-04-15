@@ -49,21 +49,32 @@ def main() -> None:
         sample_size=args.sample_size,
     )
 
-    metrics_df = outputs["metrics"]
+    benchmark_df = outputs["benchmark_table"]
+    workload_df = outputs["workload_table"]
     review_queue_df = outputs["review_queue"]
 
     print("Week 8 prototype run complete.")
     print(f"Review mode: {review_mode}")
     print(f"Candidate pairs: {len(outputs['candidate_pairs'])}")
     print(f"Review queue size: {len(review_queue_df)}")
-    print("Evaluation comparison table:")
-    print(metrics_df.to_string(index=False))
+    print("Benchmark comparison table:")
+    print(benchmark_df.to_string(index=False))
+    print("Workload summary table:")
+    print(workload_df.to_string(index=False))
     print("Key outputs:")
     print(f"- {CONFIG.paths.classified_pairs}")
     print(f"- {CONFIG.paths.review_queue}")
     print(f"- {CONFIG.paths.review_decisions_results}")
     print(f"- {CONFIG.paths.final_decisions}")
     print(f"- {CONFIG.paths.evaluation_results}")
+    print(f"- {CONFIG.paths.benchmark_table}")
+    print(f"- {CONFIG.paths.workload_table}")
+    print(f"- {CONFIG.paths.decision_counts_table}")
+    print(f"- {CONFIG.paths.metrics_figure}")
+    print(f"- {CONFIG.paths.workload_figure}")
+    print(f"- {CONFIG.paths.decision_distribution_figure}")
+    print(f"- {CONFIG.paths.similarity_distribution_figure}")
+    print(f"- {CONFIG.paths.resolution_flow_figure}")
 
 
 if __name__ == "__main__":
