@@ -1,4 +1,3 @@
-import json
 import sys
 from pathlib import Path
 
@@ -10,453 +9,305 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.config import CONFIG  # noqa: E402
-from src.evaluate import build_ground_truth_pairs, compare_approaches  # noqa: E402
-from src.pipeline import run_experiment  # noqa: E402
-import src.reporting as reporting  # noqa: E402
-from src.review_store import (  # noqa: E402
-    apply_review_decisions,
-    get_pending_review_queue,
+from src.empi import run_experiment  # noqa: E402
+from src.empi.comparison import interpret_evidence  # noqa: E402
+from src.empi.hitl import (  # noqa: E402
     load_review_decisions,
+    pending_review_queue,
     save_review_decisions,
     upsert_review_decision,
 )
-from src.similarity import fuzzy_similarity  # noqa: E402
-from src.utils import exact_similarity  # noqa: E402
+from src.utils.config import CONFIG  # noqa: E402
 
 
-def _load_csv_if_exists(path: Path, *, dtype: str | None = None) -> pd.DataFrame:
+def _read_csv(path: Path, dtype: str | None = None) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
-    if dtype is None:
-        return pd.read_csv(path)
-    return pd.read_csv(path, dtype=dtype).fillna("")
+    if dtype:
+        return pd.read_csv(path, dtype=dtype).fillna("")
+    return pd.read_csv(path).fillna("")
 
 
 @st.cache_data(show_spinner=False)
-def _load_cached_csv(path_str: str, modified_time: float, dtype: str | None = None) -> pd.DataFrame:
-    path = Path(path_str)
+def _cached_csv(path_text: str, modified_time: float, dtype: str | None = None) -> pd.DataFrame:
+    return _read_csv(Path(path_text), dtype)
+
+
+def _load(path: Path, dtype: str | None = None) -> pd.DataFrame:
+    return _cached_csv(str(path), path.stat().st_mtime if path.exists() else 0, dtype)
+
+
+def _show_image(path: Path, caption: str) -> None:
     if not path.exists():
-        return pd.DataFrame()
-    if dtype is None:
-        return pd.read_csv(path)
-    return pd.read_csv(path, dtype=dtype).fillna("")
-
-
-def _cached_csv(path: Path, *, dtype: str | None = None) -> pd.DataFrame:
-    modified_time = path.stat().st_mtime if path.exists() else 0.0
-    return _load_cached_csv(str(path), modified_time, dtype=dtype)
-
-
-def _load_review_queue() -> pd.DataFrame:
-    return _cached_csv(CONFIG.paths.review_queue, dtype=str)
-
-
-def _load_generation_manifest() -> dict:
-    if not CONFIG.paths.generation_manifest.exists():
-        return {}
-    try:
-        return json.loads(CONFIG.paths.generation_manifest.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-
-def _render_image(path: Path, caption: str) -> None:
+        st.info(f"Run the pipeline to generate {path.name}.")
+        return
     try:
         st.image(str(path), caption=caption, use_container_width=True)
     except TypeError:
         st.image(str(path), caption=caption)
 
 
-def _config_path(name: str) -> Path | None:
-    return getattr(CONFIG.paths, name, None)
+def _metric_cards() -> None:
+    df_a = _load(CONFIG.paths.febrl_a, dtype=str)
+    df_b = _load(CONFIG.paths.febrl_b, dtype=str)
+    blocking = _load(CONFIG.paths.blocking_stats)
+    queue = _load(CONFIG.paths.review_queue, dtype=str)
+    metrics = _load(CONFIG.paths.evaluation_metrics)
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Dataset", "FEBRL4")
+    c2.metric("Records A", f"{len(df_a):,}")
+    c3.metric("Records B", f"{len(df_b):,}")
+    c4.metric("Review queue", f"{len(queue):,}")
+    if not blocking.empty:
+        c5.metric("Blocking recall", f"{float(blocking.iloc[0]['blocking_recall']) * 100:.1f}%")
+    else:
+        c5.metric("Blocking recall", "n/a")
 
-
-def _format_int(value: int) -> str:
-    return f"{int(value):,}"
-
-
-def _format_percent(numerator: int, denominator: int) -> str:
-    if denominator == 0:
-        return "0.0%"
-    return f"{(numerator / denominator) * 100:.1f}%"
-
-
-def _save_manual_decision(record_id_a: str, record_id_b: str, reviewer_decision: str) -> None:
-    review_decisions_df = load_review_decisions(CONFIG.paths.review_decisions)
-    updated_decisions_df = upsert_review_decision(
-        review_decisions_df=review_decisions_df,
-        record_id_a=record_id_a,
-        record_id_b=record_id_b,
-        reviewer_decision=reviewer_decision,
-        review_source="manual_review",
-    )
-    save_review_decisions(
-        updated_decisions_df,
-        path=CONFIG.paths.review_decisions,
-        export_path=CONFIG.paths.review_decisions_results,
-    )
-
-
-def _run_pipeline_from_app(sample_size: int, regenerate_data: bool) -> None:
-    with st.spinner("Running the pipeline and refreshing the review queue..."):
-        run_experiment(
-            regenerate_data=regenerate_data,
-            review_mode="merge",
-            sample_size=sample_size,
+    if not metrics.empty:
+        ai = metrics[metrics["approach"] == "ai_only"].iloc[0]
+        hitl = metrics[metrics["approach"] == "ai_hitl_simulated"].iloc[0]
+        st.caption(
+            f"AI-only F1: {ai['f1_score']:.3f}. "
+            f"Simulated AI + HITL F1: {hitl['f1_score']:.3f}."
         )
 
 
-def _reset_review_decisions() -> None:
-    empty_df = pd.DataFrame(
-        columns=["record_id_a", "record_id_b", "reviewer_decision", "review_source"]
+def _overview() -> None:
+    st.markdown("## Overview")
+    st.write(
+        "This dashboard demonstrates an EMPI-inspired record linkage workflow using FEBRL benchmark data. "
+        "The system blocks candidate pairs, compares identity fields, scores match evidence, and sends uncertain pairs to human review."
     )
-    save_review_decisions(
-        empty_df,
-        path=CONFIG.paths.review_decisions,
-        export_path=CONFIG.paths.review_decisions_results,
+    _metric_cards()
+    st.markdown("### Why HITL is used")
+    st.write(
+        "The model resolves high-confidence matches and non-matches automatically. "
+        "Pairs in the uncertainty band go to a reviewer because field evidence is mixed or incomplete."
+    )
+    st.markdown("### Workflow")
+    st.write(
+        "FEBRL records -> preprocessing -> multi-pass blocking -> field comparison -> EMPI-style scoring -> threshold decision -> human review -> final links"
     )
 
 
-def _build_pair_comparison_df(pair: pd.Series) -> pd.DataFrame:
-    rows = [
-        ("First name", pair["first_name_a"], pair["first_name_b"], float(pair["sim_first_name"])),
-        ("Last name", pair["last_name_a"], pair["last_name_b"], float(pair["sim_last_name"])),
-        ("Date of birth", pair["date_of_birth_a"], pair["date_of_birth_b"], float(pair["sim_dob"])),
-        ("Gender", pair["gender_a"], pair["gender_b"], float(pair["sim_gender"])),
-        ("Address", pair["address_a"], pair["address_b"], float(pair["sim_address"])),
-        ("City", pair["city_a"], pair["city_b"], fuzzy_similarity(pair["city_a"], pair["city_b"])),
-        ("State", pair["state_a"], pair["state_b"], exact_similarity(pair["state_a"], pair["state_b"])),
-        ("Postcode", pair["postcode_a"], pair["postcode_b"], float(pair["sim_postcode"])),
+def _dataset_profile() -> None:
+    st.markdown("## Dataset Profile")
+    if CONFIG.paths.dataset_profile.exists():
+        st.markdown(CONFIG.paths.dataset_profile.read_text(encoding="utf-8"))
+    else:
+        st.info("Run the pipeline to generate the dataset profile.")
+
+
+def _workflow() -> None:
+    st.markdown("## EMPI Workflow")
+    cols = st.columns(7)
+    steps = [
+        "Load FEBRL",
+        "Preprocess",
+        "Block",
+        "Compare",
+        "Score",
+        "Review",
+        "Evaluate",
     ]
-
-    comparison_df = pd.DataFrame(
-        rows,
-        columns=["Field", "Record A", "Record B", "Similarity"],
-    )
-    comparison_df["Similarity"] = comparison_df["Similarity"].apply(
-        lambda value: "" if value is None or pd.isna(value) else f"{value:.3f}"
-    )
-    return comparison_df
-
-
-def _load_runtime_seconds() -> float:
-    metrics_df = _load_csv_if_exists(CONFIG.paths.evaluation_results)
-    if metrics_df.empty or "runtime_seconds" not in metrics_df.columns:
-        return 0.0
-    ai_only_df = metrics_df[metrics_df["approach"] == "ai_only"]
-    if ai_only_df.empty:
-        return 0.0
-    return float(ai_only_df.iloc[0]["runtime_seconds"])
-
-
-@st.cache_data(show_spinner=False)
-def _load_ground_truth(path_str: str, modified_time: float) -> pd.DataFrame:
-    path = Path(path_str)
-    if not path.exists():
-        return pd.DataFrame()
-    records_df = pd.read_csv(path, dtype=str).fillna("")
-    return build_ground_truth_pairs(records_df)
-
-
-def _build_live_summary(review_decisions_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    classified_pairs_df = _cached_csv(CONFIG.paths.classified_pairs)
-    if classified_pairs_df.empty:
-        return {
-            "classified_pairs": pd.DataFrame(),
-            "resolved_pairs": pd.DataFrame(),
-            "metrics": pd.DataFrame(),
-            "benchmark_table": pd.DataFrame(),
-            "workload_table": pd.DataFrame(),
-            "decision_counts_table": pd.DataFrame(),
-        }
-
-    ground_truth_df = _load_ground_truth(
-        str(CONFIG.paths.synthetic_records),
-        CONFIG.paths.synthetic_records.stat().st_mtime if CONFIG.paths.synthetic_records.exists() else 0.0,
-    )
-    runtime_seconds = _load_runtime_seconds()
-    resolved_pairs_df = apply_review_decisions(classified_pairs_df, review_decisions_df)
-    metrics_df = compare_approaches(resolved_pairs_df, ground_truth_df, runtime_seconds)
-
-    return {
-        "classified_pairs": classified_pairs_df,
-        "resolved_pairs": resolved_pairs_df,
-        "metrics": metrics_df,
-        "benchmark_table": reporting.build_benchmark_table(metrics_df),
-        "workload_table": reporting.build_workload_table(metrics_df),
-        "decision_counts_table": reporting.build_decision_counts_table(
-            classified_pairs_df,
-            resolved_pairs_df,
-            review_decisions_df,
-        ),
-    }
-
-
-def _render_identity_snapshot(title: str, prefix: str, pair: pd.Series) -> None:
-    st.markdown(f"#### {title}")
-    st.markdown(f"**Name:** {pair[f'first_name_{prefix}']} {pair[f'last_name_{prefix}']}")
-    st.markdown(f"**Date of birth:** {pair[f'date_of_birth_{prefix}']}")
-    st.markdown(f"**Gender:** {pair[f'gender_{prefix}']}")
-    st.markdown(f"**Address:** {pair[f'address_{prefix}']}")
-    st.markdown(
-        f"**Location:** {pair[f'city_{prefix}']}, {pair[f'state_{prefix}']} {pair[f'postcode_{prefix}']}"
+    for col, step in zip(cols, steps):
+        col.info(step)
+    st.write(
+        "The matcher uses ECM probability where available and blends it with a Hybrid EMPI-style evidence score. "
+        "The hybrid score combines multiple identity fields and applies conflict penalties for major disagreements."
     )
 
 
-def _render_overview(
-    metrics_df: pd.DataFrame,
-    benchmark_df: pd.DataFrame,
-    workload_df: pd.DataFrame,
-    decision_counts_df: pd.DataFrame,
-    generation_manifest: dict,
-    classified_pairs_df: pd.DataFrame,
-    review_queue_df: pd.DataFrame,
-    pending_df: pd.DataFrame,
-    review_decisions_df: pd.DataFrame,
-    final_decisions_df: pd.DataFrame,
-) -> None:
-    candidate_pairs = len(classified_pairs_df)
-    final_match_count = int((final_decisions_df["final_decision"] == "Match").sum()) if not final_decisions_df.empty else 0
-    auto_match_count = int((classified_pairs_df["system_decision"] == "Match").sum()) if not classified_pairs_df.empty else 0
-    auto_non_match_count = int((classified_pairs_df["system_decision"] == "Non-match").sum()) if not classified_pairs_df.empty else 0
+def _matching_dashboard() -> None:
+    st.markdown("## Matching Dashboard")
+    _metric_cards()
+    benchmark = _load(CONFIG.paths.benchmark_table)
+    workload = _load(CONFIG.paths.workload_table)
+    blocking = _load(CONFIG.paths.blocking_stats)
+    if not blocking.empty:
+        st.table(blocking)
+    if not benchmark.empty:
+        st.markdown("### Benchmark Metrics")
+        st.table(benchmark)
+    if not workload.empty:
+        st.markdown("### Workload Metrics")
+        st.table(workload)
+    left, right = st.columns(2)
+    with left:
+        _show_image(CONFIG.paths.benchmark_figure, "Benchmark comparison.")
+    with right:
+        _show_image(CONFIG.paths.workload_figure, "Review workload comparison.")
+    left, right = st.columns(2)
+    with left:
+        _show_image(CONFIG.paths.decision_distribution_figure, "Decision distribution.")
+    with right:
+        _show_image(CONFIG.paths.score_distribution_figure, "Score distribution.")
 
-    st.markdown("## Project Status")
-    card1, card2, card3, card4, card5, card6 = st.columns(6)
-    card1.metric("Candidate pairs", _format_int(candidate_pairs))
-    card2.metric("Review needed", _format_int(len(review_queue_df)))
-    card3.metric("Reviewed pairs", _format_int(len(review_decisions_df)))
-    card4.metric("Pending review", _format_int(len(pending_df)))
-    card5.metric("Auto matches", _format_int(auto_match_count))
-    card6.metric("Final matches", _format_int(final_match_count))
 
-    left_col, right_col = st.columns([1.15, 1])
-    with left_col:
-        st.markdown("### Current Run")
-        base_records = generation_manifest.get("base_record_count", "unknown")
-        synthetic_duplicates = generation_manifest.get("synthetic_duplicate_count", "unknown")
-        duplicate_rate = generation_manifest.get("duplicate_rate", "unknown")
-        st.markdown(
-            f"- Base records: `{base_records}`\n"
-            f"- Synthetic duplicates: `{synthetic_duplicates}`\n"
-            f"- Duplicate rate: `{duplicate_rate}`\n"
-            f"- Auto non-matches: `{_format_int(auto_non_match_count)}`\n"
-            f"- Review completion: `{_format_percent(len(review_decisions_df), len(review_queue_df))}`"
+def _field_evidence(pair: pd.Series) -> pd.DataFrame:
+    field_map = [
+        ("Given name", "given_name", "given_name_sim"),
+        ("Surname", "surname", "surname_sim"),
+        ("Date of birth", "date_of_birth", "date_of_birth_exact"),
+        ("Address", "address", "address_sim"),
+        ("Suburb/Place", "suburb", "suburb_sim"),
+        ("State", "state", "state_exact"),
+        ("Postcode", "postcode", "postcode_exact"),
+        ("Sex/Gender", "sex", "sex_exact"),
+        ("Available identifier", "identifier", ""),
+    ]
+    rows = []
+    for label, field, score_col in field_map:
+        a_value = pair.get(f"{field}_a", "")
+        b_value = pair.get(f"{field}_b", "")
+        if str(a_value).strip() == "" and str(b_value).strip() == "" and (
+            score_col == "" or score_col not in pair
+        ):
+            continue
+        score = "" if score_col == "" or score_col not in pair else pair[score_col]
+        interpretation = "Context only" if score == "" else interpret_evidence(a_value, b_value, float(score))
+        rows.append(
+            {
+                "Field": label,
+                "Record A": a_value,
+                "Record B": b_value,
+                "Similarity": "" if score == "" else f"{float(score):.3f}",
+                "Interpretation": interpretation,
+            }
         )
-        if not benchmark_df.empty:
-            st.markdown("### Benchmark Snapshot")
-            st.table(benchmark_df)
-            st.caption(
-                "The manual review benchmark is simulated over the blocked candidate set. "
-                "It is not a literal full manual-matching run across all possible pairs."
-            )
-
-    with right_col:
-        st.markdown("### Operational HITL Loop")
-        st.markdown(
-            "1. AI scores candidate pairs.\n"
-            "2. Threshold logic assigns Match, Non-match, or Review Needed.\n"
-            "3. Uncertain pairs enter the review queue.\n"
-            "4. A reviewer inspects one pair at a time.\n"
-            "5. The decision is stored and the next pending pair is shown.\n"
-            "6. Reviewed and automated decisions are merged into final outputs."
-        )
-        st.info(
-            "This prototype uses an operational review loop. It does not retrain the matcher during the run."
-        )
-
-    if not workload_df.empty:
-        st.markdown("### Workload Snapshot")
-        st.table(workload_df)
-
-    if not decision_counts_df.empty:
-        with st.expander("Decision count summary", expanded=False):
-            st.table(decision_counts_df)
-
-    if not metrics_df.empty and "approach" in metrics_df.columns:
-        ai_only_row = metrics_df[metrics_df["approach"] == "ai_only"]
-        hitl_row = metrics_df[metrics_df["approach"] == "ai_human_hitl"]
-        if not ai_only_row.empty and not hitl_row.empty:
-            recall_gain = float(hitl_row.iloc[0]["recall"]) - float(ai_only_row.iloc[0]["recall"])
-            st.caption(
-                f"Current recall gain from AI-only to AI + HITL: {recall_gain:.3f}"
-            )
+    return pd.DataFrame(rows)
 
 
-def _render_charts() -> None:
-    st.markdown("## Metrics and Charts")
-
-
-def _render_live_charts(metrics_df: pd.DataFrame, classified_pairs_df: pd.DataFrame, resolved_pairs_df: pd.DataFrame) -> None:
-    top_left, top_right = st.columns(2)
-    with top_left:
-        st.pyplot(reporting.build_metrics_figure(metrics_df))
-    with top_right:
-        st.pyplot(reporting.build_workload_figure(metrics_df))
-
-    bottom_left, bottom_right = st.columns(2)
-    with bottom_left:
-        st.pyplot(reporting.build_decision_distribution_figure(classified_pairs_df))
-    with bottom_right:
-        st.pyplot(reporting.build_similarity_distribution_figure(classified_pairs_df))
-
-    st.pyplot(reporting.build_resolution_flow_figure(resolved_pairs_df))
-    st.caption(
-        "These charts are generated live from the current saved review decisions. "
-        "They update after each decision when you revisit Overview or Metrics & Charts."
-    )
-
-
-def _render_review_queue(review_queue_df: pd.DataFrame, review_decisions_df: pd.DataFrame) -> None:
-    st.markdown("## Review Queue")
-    pending_df = get_pending_review_queue(review_queue_df, review_decisions_df)
-
-    progress_ratio = 0.0 if len(review_queue_df) == 0 else len(review_decisions_df) / len(review_queue_df)
-    st.progress(min(max(progress_ratio, 0.0), 1.0))
-    st.caption(
-        f"Queue progress: {_format_int(len(review_decisions_df))} reviewed out of {_format_int(len(review_queue_df))} uncertain pairs."
-    )
-
-    queue_col1, queue_col2, queue_col3 = st.columns(3)
-    queue_col1.metric("Pending now", _format_int(len(pending_df)))
-    queue_col2.metric("Completed", _format_int(len(review_decisions_df)))
-    queue_col3.metric("Completion rate", _format_percent(len(review_decisions_df), len(review_queue_df)))
-
-    if pending_df.empty:
-        st.success(
-            "There are no pending uncertain pairs. Re-run the pipeline to refresh results or inspect the saved outputs."
-        )
+def _review_queue() -> None:
+    st.markdown("## Human Review Queue")
+    queue = _load(CONFIG.paths.review_queue, dtype=str)
+    decisions = load_review_decisions(CONFIG.paths.review_decisions)
+    if queue.empty:
+        st.warning("Run the pipeline to create a review queue.")
+        return
+    pending = pending_review_queue(queue, decisions)
+    resolved = decisions[decisions["reviewer_decision"].isin(["Confirm Match", "Reject Match"])]
+    skipped = decisions[decisions["reviewer_decision"] == "Skip"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Needs review", f"{len(queue):,}")
+    c2.metric("Resolved", f"{len(resolved):,}")
+    c3.metric("Skipped", f"{len(skipped):,}")
+    c4.metric("Pending", f"{len(pending):,}")
+    st.caption("Skip does not finalise a pair. It keeps the pair pending for later review.")
+    if pending.empty:
+        st.success("No pending review pairs remain.")
         return
 
-    pair = pending_df.iloc[0]
-    overall_score = float(pair["overall_score"])
-
+    pair = pending.iloc[0]
     st.markdown("### Current Pair")
-    meta1, meta2, meta3, meta4 = st.columns(4)
-    meta1.metric("Overall score", f"{overall_score:.3f}")
-    meta2.metric("Queue position", f"1 / {len(pending_df)}")
-    meta3.metric("Block rule", pair["block_rule"])
-    meta4.metric("Pair IDs", f"{pair['record_id_a']} | {pair['record_id_b']}")
-    st.progress(min(max(overall_score, 0.0), 1.0))
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Model score", f"{float(pair['model_score']):.3f}")
+    m2.metric("Hybrid EMPI score", f"{float(pair['hybrid_empi_score']):.3f}")
+    m3.metric("Model decision", pair["model_decision"])
+    st.info(pair["decision_reason"])
 
-    snapshot_left, snapshot_right = st.columns(2)
-    with snapshot_left:
-        _render_identity_snapshot("Record A", "a", pair)
-    with snapshot_right:
-        _render_identity_snapshot("Record B", "b", pair)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### Record A")
+        st.write(f"Name: {pair['given_name_a']} {pair['surname_a']}")
+        st.write(f"DOB: {pair['date_of_birth_a']}")
+        st.write(f"Address: {pair['address_a']}")
+        st.write(f"Location: {pair['suburb_a']}, {pair['state_a']} {pair['postcode_a']}")
+    with right:
+        st.markdown("#### Record B")
+        st.write(f"Name: {pair['given_name_b']} {pair['surname_b']}")
+        st.write(f"DOB: {pair['date_of_birth_b']}")
+        st.write(f"Address: {pair['address_b']}")
+        st.write(f"Location: {pair['suburb_b']}, {pair['state_b']} {pair['postcode_b']}")
 
-    st.markdown("### Pair Comparison")
-    st.table(_build_pair_comparison_df(pair))
-
-    st.markdown("### Review Decision")
-    st.caption("Choose the final human review outcome for this uncertain pair. The app will save the decision and advance to the next pending item.")
-    action_col1, action_col2, action_col3 = st.columns(3)
-
-    if action_col1.button("Confirm Match", type="primary", use_container_width=True):
-        _save_manual_decision(pair["record_id_a"], pair["record_id_b"], "Confirm Match")
+    st.markdown("### Field Evidence")
+    st.table(_field_evidence(pair))
+    notes = st.text_area("Reviewer notes")
+    a, b, c = st.columns(3)
+    if a.button("Confirm Match", type="primary", use_container_width=True):
+        updated = upsert_review_decision(decisions, pair, "Confirm Match", notes, CONFIG.matcher.lower_threshold, CONFIG.matcher.upper_threshold)
+        save_review_decisions(updated, CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
+        st.rerun()
+    if b.button("Reject Match", use_container_width=True):
+        updated = upsert_review_decision(decisions, pair, "Reject Match", notes, CONFIG.matcher.lower_threshold, CONFIG.matcher.upper_threshold)
+        save_review_decisions(updated, CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
+        st.rerun()
+    if c.button("Skip", use_container_width=True):
+        updated = upsert_review_decision(decisions, pair, "Skip", notes, CONFIG.matcher.lower_threshold, CONFIG.matcher.upper_threshold)
+        save_review_decisions(updated, CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
         st.rerun()
 
-    if action_col2.button("Reject Match", use_container_width=True):
-        _save_manual_decision(pair["record_id_a"], pair["record_id_b"], "Reject Match")
-        st.rerun()
 
-    if action_col3.button("Skip", use_container_width=True):
-        _save_manual_decision(pair["record_id_a"], pair["record_id_b"], "Skip")
-        st.rerun()
+def _threshold_analysis() -> None:
+    st.markdown("## Threshold Analysis")
+    sweep = _load(CONFIG.paths.threshold_sweep)
+    if not sweep.empty:
+        st.dataframe(sweep)
+    else:
+        st.info("Run python scripts/run_threshold_sweep.py to generate threshold analysis.")
+    _show_image(CONFIG.paths.threshold_f1_figure, "Threshold vs F1.")
+    _show_image(CONFIG.paths.threshold_workload_figure, "Threshold vs review workload.")
+    _show_image(CONFIG.paths.recall_workload_figure, "Recall vs review workload.")
+    if CONFIG.paths.threshold_sweep_summary.exists():
+        st.markdown(CONFIG.paths.threshold_sweep_summary.read_text(encoding="utf-8"))
+
+
+def _report_outputs() -> None:
+    st.markdown("## Report Outputs")
+    for path in [
+        CONFIG.paths.problem_formulation,
+        CONFIG.paths.methodology_summary,
+        CONFIG.paths.evaluation_summary,
+        CONFIG.paths.limitations,
+        CONFIG.paths.weekly_reflection_change_summary,
+    ]:
+        if path.exists():
+            with st.expander(path.name):
+                st.markdown(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
-    st.set_page_config(page_title="HITL Record Linkage Review", layout="wide")
-    st.title("HITL Record Linkage Review")
-    st.caption(
-        "Research prototype for duplicate patient record detection using weighted similarity scoring and an operational human review loop."
-    )
+    st.set_page_config(page_title="EMPI HITL Record Linkage", layout="wide")
+    st.title("AI-Assisted HITL Record Linkage")
+    st.caption("FEBRL benchmark, EMPI-inspired scoring, and operational review of ambiguous links.")
 
     with st.sidebar:
-        st.header("Run or Load Results")
-        sample_size = st.number_input(
-            "Sample size",
-            min_value=100,
-            value=int(CONFIG.duplicates.sample_size or 5000),
-            step=100,
-        )
-        regenerate_data = st.checkbox(
-            "Regenerate synthetic data",
-            value=False,
-            help="Enable this when you want a fresh sample and duplicate set.",
-        )
-        if st.button("Run / Refresh Pipeline", type="primary"):
-            _run_pipeline_from_app(sample_size=int(sample_size), regenerate_data=regenerate_data)
-            st.success("Pipeline outputs refreshed.")
-
-        if st.button("Reset Review Decisions", use_container_width=True):
-            _reset_review_decisions()
-            st.success("Saved manual review decisions were cleared.")
+        st.header("Controls")
+        mode = st.selectbox("Review mode", ["merge", "simulate", "ignore"])
+        lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
+        upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
+        if st.button("Run pipeline", type="primary", use_container_width=True):
+            with st.spinner("Running FEBRL linkage pipeline..."):
+                run_experiment(mode, lower, upper)
+            st.cache_data.clear()
+            st.success("Pipeline complete.")
+        if st.button("Reset review decisions", use_container_width=True):
+            save_review_decisions(pd.DataFrame(), CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
+            st.cache_data.clear()
             st.rerun()
 
-        st.markdown("### Demo Notes")
-        st.markdown(
-            "- Start on the overview tab.\n"
-            "- Show the benchmark and workload charts.\n"
-            "- Move to the review queue and classify one uncertain pair.\n"
-            "- Re-run the pipeline if you want the final outputs refreshed."
-        )
-
-        st.markdown("### Output Files")
-        st.write(f"Review queue: `{CONFIG.paths.review_queue}`")
-        st.write(f"Manual decisions: `{CONFIG.paths.review_decisions}`")
-        st.write(f"Evaluation metrics: `{CONFIG.paths.evaluation_results}`")
-
-    review_queue_df = _load_review_queue()
-    review_decisions_df = load_review_decisions(CONFIG.paths.review_decisions)
-    generation_manifest = _load_generation_manifest()
-
-    if review_queue_df.empty:
-        st.warning(
-            "No review queue found yet. Use the sidebar button to run the pipeline and generate presentation outputs."
-        )
-        return
-
-    pending_df = get_pending_review_queue(review_queue_df, review_decisions_df)
-    try:
-        section = st.radio(
-            "Section",
-            ["Overview", "Metrics & Charts", "Review Queue"],
-            horizontal=True,
-            key="app_section",
-        )
-    except TypeError:
-        section = st.radio(
-            "Section",
-            ["Overview", "Metrics & Charts", "Review Queue"],
-            key="app_section",
-        )
-
-    live_summary = None
-    if section in {"Overview", "Metrics & Charts"}:
-        live_summary = _build_live_summary(review_decisions_df)
-
-    if section == "Overview":
-        _render_overview(
-            metrics_df=live_summary["metrics"],
-            benchmark_df=live_summary["benchmark_table"],
-            workload_df=live_summary["workload_table"],
-            decision_counts_df=live_summary["decision_counts_table"],
-            generation_manifest=generation_manifest,
-            classified_pairs_df=live_summary["classified_pairs"],
-            review_queue_df=review_queue_df,
-            pending_df=pending_df,
-            review_decisions_df=review_decisions_df,
-            final_decisions_df=live_summary["resolved_pairs"],
-        )
-    elif section == "Metrics & Charts":
-        _render_live_charts(
-            metrics_df=live_summary["metrics"],
-            classified_pairs_df=live_summary["classified_pairs"],
-            resolved_pairs_df=live_summary["resolved_pairs"],
-        )
-    else:
-        _render_review_queue(review_queue_df, review_decisions_df)
+    page = st.radio(
+        "Page",
+        [
+            "Overview",
+            "Dataset Profile",
+            "EMPI Workflow",
+            "Matching Dashboard",
+            "Human Review Queue",
+            "Threshold Analysis",
+            "Report Outputs",
+        ],
+        horizontal=True,
+    )
+    {
+        "Overview": _overview,
+        "Dataset Profile": _dataset_profile,
+        "EMPI Workflow": _workflow,
+        "Matching Dashboard": _matching_dashboard,
+        "Human Review Queue": _review_queue,
+        "Threshold Analysis": _threshold_analysis,
+        "Report Outputs": _report_outputs,
+    }[page]()
 
 
 if __name__ == "__main__":

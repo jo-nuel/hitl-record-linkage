@@ -1,0 +1,1 @@
+timestamp,record_id_a,record_id_b,model_score,model_decision,reviewer_decision,final_decision,notes,lower_threshold,upper_threshold,given_name_sim,surname_sim,date_of_birth_exact,address_sim,suburb_sim,state_exact,postcode_exact,sex_exact

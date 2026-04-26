@@ -1,0 +1,2 @@
+total_possible_pairs,candidate_pairs,reduction_ratio,true_links_total,true_links_retained,true_links_missed,blocking_recall,blocking_rules
+25000000,151017,0.99395932,5000,4992,8,0.9984,surname + birth_year; postcode + surname_initial; given_initial + surname_initial; date_of_birth; postcode

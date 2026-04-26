@@ -1,36 +1,29 @@
-# HITL Record Linkage
+# AI-Assisted HITL Record Linkage
 
-This repository contains the Week 8 research prototype for:
+University research prototype for detecting duplicate or linked patient-style records with an EMPI-inspired workflow.
 
-**AI-Assisted Human-in-the-Loop Record Linkage for Detecting Duplicate Patient Records in Healthcare Datasets**
+## Dataset Change: Synthea To FEBRL
 
-The prototype uses the Synthea `patients.csv` dataset, creates synthetic duplicates with known ground truth, applies weighted similarity matching, and sends only uncertain cases to a human reviewer.
+Peer feedback identified a stronger benchmark option through the Python Record Linkage Toolkit. The project now uses FEBRL4 as the main dataset because it provides two-file record linkage data with known true links.
 
-## HITL Operational Loop
+This change improves evaluation quality. The previous Synthea-based approach depended on internally created labels. The active implementation now evaluates against FEBRL benchmark links.
 
-This project uses an **operational HITL review loop**, not an active-learning retraining loop.
+FEBRL is fictitious benchmark data. It is not real hospital production data.
 
-The loop is:
+## Method
 
-1. AI scores blocked record pairs.
-2. Threshold logic assigns `Match`, `Non-match`, or `Review Needed`.
-3. Only `Review Needed` pairs are written to the review queue.
-4. A reviewer inspects one uncertain pair at a time.
-5. The reviewer chooses `Confirm Match`, `Reject Match`, or `Skip`.
-6. The decision is saved to CSV.
-7. Final outputs merge automated decisions with reviewed decisions.
+The workflow is:
 
-The model is **not retrained** from review feedback in this Week 8 prototype. The goal is to demonstrate explainable human oversight for ambiguous cases.
+1. Load FEBRL4.
+2. Preprocess identity fields.
+3. Generate candidate pairs with multi-pass blocking.
+4. Compare fields with Jaro-Winkler and exact agreement.
+5. Score pairs with ECM probability and a Hybrid EMPI-style evidence score.
+6. Split pairs into Auto Match, Auto Non-match, or Needs Human Review.
+7. Store reviewer decisions in an audit log.
+8. Evaluate AI-only, simulated AI + HITL, and manual benchmark over the blocked candidate set.
 
-## Baselines
-
-The evaluation compares exactly three approaches:
-
-- `manual_only`: a simulated clerical-review benchmark where every blocked candidate pair is assumed to be inspected against ground truth
-- `ai_only`: threshold-based automated matching with no human review of uncertain pairs
-- `ai_human_hitl`: automated matching plus human review of only `Review Needed` pairs
-
-The `manual_only` identifier is kept in the evaluation outputs for consistency, but it does **not** mean full end-to-end manual matching across all possible pairs. It represents full clerical review of the **blocked candidate set** only, and is included as a simulated benchmark for review effort rather than a literal interactive experiment.
+The HITL loop is operational. Reviewer decisions are stored and merged into final outputs. The matcher is not retrained during the run.
 
 ## Setup
 
@@ -38,60 +31,49 @@ The `manual_only` identifier is kept in the evaluation outputs for consistency, 
 pip install -r requirements.txt
 ```
 
-## Run The Benchmark Version
-
-This run uses simulated review so the repository produces a complete comparison table immediately.
+## Run Pipeline
 
 ```bash
-python scripts/run_pipeline.py --regenerate-data --review-mode simulate --sample-size 5000
+python scripts/run_pipeline.py
 ```
 
-Main outputs:
-
-- [data/results/classified_pairs.csv](data/results/classified_pairs.csv)
-- [data/results/review_queue.csv](data/results/review_queue.csv)
-- [data/results/review_decisions.csv](data/results/review_decisions.csv)
-- [data/results/final_decisions.csv](data/results/final_decisions.csv)
-- [data/results/evaluation_metrics.csv](data/results/evaluation_metrics.csv)
-- [data/results/experiment_summary.md](data/results/experiment_summary.md)
-- [data/results/benchmark_comparison_table.csv](data/results/benchmark_comparison_table.csv)
-- [data/results/workload_summary_table.csv](data/results/workload_summary_table.csv)
-- `data/results/figures/` for presentation-ready charts
-
-## Run The Manual HITL Demo
-
-1. Generate or refresh the review queue:
+Run simulated HITL evaluation:
 
 ```bash
-python scripts/run_pipeline.py --regenerate-data --review-mode merge --sample-size 5000
+python scripts/run_pipeline.py --review-mode simulate
 ```
 
-2. Open the Streamlit reviewer:
+## Run Threshold Sweep
 
 ```bash
-streamlit run app/streamlit_app.py
+python scripts/run_threshold_sweep.py
 ```
 
-The Streamlit app includes:
-
-- an overview page with current run status
-- benchmark and workload tables
-- presentation-ready charts generated from real outputs
-- the live review queue for uncertain pairs
-
-3. After saving manual decisions, re-run the pipeline to merge them into the final outputs:
+## Run Dashboard
 
 ```bash
-python scripts/run_pipeline.py --review-mode merge --sample-size 5000
+streamlit run app.py
 ```
 
-Manual review decisions are stored in [data/reviewed/review_decisions.csv](data/reviewed/review_decisions.csv) and copied into [data/results/review_decisions.csv](data/results/review_decisions.csv) for each run.
+## Main Outputs
 
-## Current Output Story
+- `data/processed/febrl_a.csv`
+- `data/processed/febrl_b.csv`
+- `data/processed/febrl_true_links.csv`
+- `data/review_decisions.csv`
+- `outputs/tables/evaluation_metrics.csv`
+- `outputs/tables/review_queue.csv`
+- `outputs/tables/final_decisions.csv`
+- `outputs/tables/threshold_sweep.csv`
+- `outputs/reports/dataset_profile.md`
+- `outputs/reports/methodology_summary.md`
+- `outputs/reports/evaluation_summary.md`
+- `outputs/reports/limitations.md`
+- `outputs/figures/`
 
-- `data/processed/` stores the generated experiment dataset and synthetic duplicate artifacts
-- `data/results/classified_pairs.csv` stores the threshold-based AI decisions before human review
-- `data/results/review_queue.csv` stores the uncertain pairs shown to the reviewer
-- `data/results/final_decisions.csv` stores the merged automated and reviewed outputs
-- `data/results/evaluation_metrics.csv` stores one clear comparison table for `manual_only`, `ai_only`, and `ai_human_hitl`
-- `data/results/experiment_summary.md` stores lightweight initial experimental analysis for the progress report
+## Evaluation Labels
+
+- Manual Benchmark, Blocked Set: every blocked candidate pair is resolved against FEBRL true links.
+- AI Only: automatic matches count as links. Review-needed pairs are left unresolved.
+- AI + HITL Simulated: review-needed pairs are resolved using FEBRL true links as an ideal reviewer.
+- AI + HITL Review File: saved reviewer decisions from `data/review_decisions.csv` are merged into final outputs.

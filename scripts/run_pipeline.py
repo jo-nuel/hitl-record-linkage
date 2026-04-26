@@ -7,74 +7,41 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.config import CONFIG  # noqa: E402
-from src.pipeline import run_experiment  # noqa: E402
+from src.empi import run_experiment  # noqa: E402
+from src.utils.config import CONFIG  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the Week 8 HITL record linkage prototype."
-    )
-    parser.add_argument(
-        "--regenerate-data",
-        action="store_true",
-        help="Rebuild the synthetic duplicate dataset before running the experiment.",
-    )
-    parser.add_argument(
-        "--sample-size",
-        type=int,
-        default=None,
-        help="Optional number of source records to use for the generated experiment dataset.",
-    )
-    parser.add_argument(
-        "--review-mode",
-        choices=["merge", "simulate", "ignore"],
-        default=CONFIG.review.default_review_mode,
-        help="How the pipeline should handle review decisions.",
-    )
-    parser.add_argument(
-        "--simulate-review",
-        action="store_true",
-        help="Compatibility flag that sets --review-mode simulate.",
-    )
+    parser = argparse.ArgumentParser(description="Run the FEBRL EMPI-inspired linkage pipeline.")
+    parser.add_argument("--review-mode", choices=["merge", "simulate", "ignore"], default="merge")
+    parser.add_argument("--lower-threshold", type=float, default=CONFIG.matcher.lower_threshold)
+    parser.add_argument("--upper-threshold", type=float, default=CONFIG.matcher.upper_threshold)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    review_mode = "simulate" if args.simulate_review else args.review_mode
     outputs = run_experiment(
-        regenerate_data=args.regenerate_data,
-        review_mode=review_mode,
-        sample_size=args.sample_size,
+        review_mode=args.review_mode,
+        lower_threshold=args.lower_threshold,
+        upper_threshold=args.upper_threshold,
     )
-
-    benchmark_df = outputs["benchmark_table"]
-    workload_df = outputs["workload_table"]
-    review_queue_df = outputs["review_queue"]
-
-    print("Week 8 prototype run complete.")
-    print(f"Review mode: {review_mode}")
-    print(f"Candidate pairs: {len(outputs['candidate_pairs'])}")
-    print(f"Review queue size: {len(review_queue_df)}")
-    print("Benchmark comparison table:")
-    print(benchmark_df.to_string(index=False))
-    print("Workload summary table:")
-    print(workload_df.to_string(index=False))
-    print("Key outputs:")
-    print(f"- {CONFIG.paths.classified_pairs}")
+    print("FEBRL EMPI-inspired linkage pipeline complete.")
+    print(f"Dataset A records: {len(outputs['df_a']):,}")
+    print(f"Dataset B records: {len(outputs['df_b']):,}")
+    print(f"True links: {len(outputs['true_links']):,}")
+    print(f"Candidate pairs: {len(outputs['candidate_pairs']):,}")
+    print(f"Review-needed pairs: {len(outputs['review_queue']):,}")
+    print("Benchmark comparison:")
+    print(outputs["benchmark_table"].to_string(index=False))
+    print("Workload comparison:")
+    print(outputs["workload_table"].to_string(index=False))
+    print("Main outputs:")
+    print(f"- {CONFIG.paths.evaluation_metrics}")
     print(f"- {CONFIG.paths.review_queue}")
-    print(f"- {CONFIG.paths.review_decisions_results}")
     print(f"- {CONFIG.paths.final_decisions}")
-    print(f"- {CONFIG.paths.evaluation_results}")
-    print(f"- {CONFIG.paths.benchmark_table}")
-    print(f"- {CONFIG.paths.workload_table}")
-    print(f"- {CONFIG.paths.decision_counts_table}")
-    print(f"- {CONFIG.paths.metrics_figure}")
-    print(f"- {CONFIG.paths.workload_figure}")
-    print(f"- {CONFIG.paths.decision_distribution_figure}")
-    print(f"- {CONFIG.paths.similarity_distribution_figure}")
-    print(f"- {CONFIG.paths.resolution_flow_figure}")
+    print(f"- {CONFIG.paths.dataset_profile}")
+    print(f"- {CONFIG.paths.figures_dir}")
 
 
 if __name__ == "__main__":

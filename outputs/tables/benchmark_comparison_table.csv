@@ -1,0 +1,5 @@
+approach,precision,recall,f1_score,true_positives,false_positives,false_negatives
+"Manual Benchmark, Blocked Set",1.0,0.998,0.999,4992,0,8
+AI Only,1.0,0.806,0.892,4028,0,972
+AI + HITL Simulated,1.0,0.994,0.997,4968,0,32
+AI + HITL Review File,1.0,0.806,0.892,4028,0,972
