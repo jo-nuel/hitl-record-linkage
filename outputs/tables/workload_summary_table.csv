@@ -1,5 +1,4 @@
 approach,candidate_pairs,review_needed_pairs,pairs_reviewed,review_workload_percent,workload_reduction_vs_full_review,auto_matches,auto_non_matches,review_pending_pairs
-"Manual Benchmark, Blocked Set",151017,952,151017,1.0,0.0,0,0,0
-AI Only,151017,952,0,0.0,1.0,4028,146037,952
-AI + HITL Simulated,151017,952,952,0.0063,0.9937,4028,146037,0
-AI + HITL Review File,151017,952,0,0.0,1.0,4028,146037,952
+Human-only Clerical Review Baseline,151017,952,151017,1.0,0.0,0,0,0
+AI-only EMPI Matcher,151017,952,0,0.0,1.0,4028,146037,952
+AI + HITL Grey-Zone Review,151017,952,952,0.0063,0.9937,4028,146037,0

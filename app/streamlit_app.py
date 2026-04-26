@@ -67,26 +67,35 @@ def _metric_cards() -> None:
         ai = metrics[metrics["approach"] == "ai_only"].iloc[0]
         hitl = metrics[metrics["approach"] == "ai_hitl_simulated"].iloc[0]
         st.caption(
-            f"AI-only F1: {ai['f1_score']:.3f}. "
-            f"Simulated AI + HITL F1: {hitl['f1_score']:.3f}."
+            f"AI-only EMPI Matcher F1: {ai['f1_score']:.3f}. "
+            f"AI + HITL Grey-Zone Review F1: {hitl['f1_score']:.3f}."
         )
 
 
 def _overview() -> None:
     st.markdown("## Overview")
     st.write(
-        "This dashboard demonstrates an EMPI-inspired record linkage workflow using FEBRL benchmark data. "
-        "The system blocks candidate pairs, compares identity fields, scores match evidence, and sends uncertain pairs to human review."
+        "This research prototype demonstrates an EMPI-inspired record linkage workflow using FEBRL benchmark data. "
+        "It aims to reduce duplicate patient identity risk by resolving clear links automatically and escalating grey-zone links for human review."
     )
     _metric_cards()
+    st.markdown("### Research Question")
+    st.write(
+        "To what extent can an AI-assisted human-in-the-loop record linkage system improve duplicate patient record detection compared with clerical review and AI-only matching?"
+    )
+    st.markdown("### Final Evaluation Methods")
+    st.write("1. Human-only Clerical Review Baseline")
+    st.write("2. AI-only EMPI Matcher")
+    st.write("3. AI + HITL Grey-Zone Review")
     st.markdown("### Why HITL is used")
     st.write(
         "The model resolves high-confidence matches and non-matches automatically. "
-        "Pairs in the uncertainty band go to a reviewer because field evidence is mixed or incomplete."
+        "Grey-zone pairs go to a reviewer because field evidence is mixed, incomplete, or risky to decide automatically. "
+        "This is an operational review loop, not an active-learning retraining loop."
     )
     st.markdown("### Workflow")
     st.write(
-        "FEBRL records -> preprocessing -> multi-pass blocking -> field comparison -> EMPI-style scoring -> threshold decision -> human review -> final links"
+        "FEBRL records -> preprocessing -> multi-pass blocking -> field-level comparison -> EMPI-style scoring -> threshold decision -> grey-zone human review -> final links"
     )
 
 
@@ -102,13 +111,13 @@ def _workflow() -> None:
     st.markdown("## EMPI Workflow")
     cols = st.columns(7)
     steps = [
-        "Load FEBRL",
+        "FEBRL records",
         "Preprocess",
-        "Block",
-        "Compare",
-        "Score",
-        "Review",
-        "Evaluate",
+        "Multi-pass blocking",
+        "Field comparison",
+        "EMPI scoring",
+        "Grey-zone review",
+        "Final links",
     ]
     for col, step in zip(cols, steps):
         col.info(step)
@@ -120,28 +129,52 @@ def _workflow() -> None:
 
 def _matching_dashboard() -> None:
     st.markdown("## Matching Dashboard")
+    st.caption("Pipeline status, blocking quality, and automatic decision distribution from the latest FEBRL run.")
     _metric_cards()
-    benchmark = _load(CONFIG.paths.benchmark_table)
     workload = _load(CONFIG.paths.workload_table)
+    decisions = _load(CONFIG.paths.decision_counts_table)
     blocking = _load(CONFIG.paths.blocking_stats)
     if not blocking.empty:
+        st.markdown("### Blocking Summary")
         st.table(blocking)
-    if not benchmark.empty:
-        st.markdown("### Benchmark Metrics")
-        st.table(benchmark)
     if not workload.empty:
         st.markdown("### Workload Metrics")
         st.table(workload)
-    left, right = st.columns(2)
-    with left:
-        _show_image(CONFIG.paths.benchmark_figure, "Benchmark comparison.")
-    with right:
-        _show_image(CONFIG.paths.workload_figure, "Review workload comparison.")
+    if not decisions.empty:
+        st.markdown("### Decision Counts")
+        st.table(decisions)
     left, right = st.columns(2)
     with left:
         _show_image(CONFIG.paths.decision_distribution_figure, "Decision distribution.")
     with right:
         _show_image(CONFIG.paths.score_distribution_figure, "Score distribution.")
+    left, right = st.columns(2)
+    with left:
+        _show_image(CONFIG.paths.resolution_flow_figure, "Resolution flow.")
+    with right:
+        _show_image(CONFIG.paths.workload_figure, "Workload comparison.")
+
+
+def _evaluation_results() -> None:
+    st.markdown("## Evaluation Results")
+    st.caption(
+        "The final comparison uses three conditions: human-only clerical review, AI-only matching, and AI + HITL grey-zone review."
+    )
+    comparison = _load(CONFIG.paths.final_evaluation_comparison)
+    if comparison.empty:
+        st.info("Run the pipeline to generate the final evaluation comparison.")
+    else:
+        st.table(comparison)
+    left, right = st.columns(2)
+    with left:
+        _show_image(CONFIG.paths.benchmark_figure, "Benchmark comparison.")
+    with right:
+        _show_image(CONFIG.paths.decision_distribution_figure, "Decision distribution.")
+    left, right = st.columns(2)
+    with left:
+        _show_image(CONFIG.paths.score_distribution_figure, "Score distribution.")
+    with right:
+        _show_image(CONFIG.paths.workload_figure, "Workload comparison.")
 
 
 def _field_evidence(pair: pd.Series) -> pd.DataFrame:
@@ -180,6 +213,7 @@ def _field_evidence(pair: pd.Series) -> pd.DataFrame:
 
 def _review_queue() -> None:
     st.markdown("## Human Review Queue")
+    st.caption("Review one grey-zone candidate pair at a time. Confirm and reject decisions are final review outcomes. Skip keeps the pair for later.")
     queue = _load(CONFIG.paths.review_queue, dtype=str)
     decisions = load_review_decisions(CONFIG.paths.review_decisions)
     if queue.empty:
@@ -189,11 +223,11 @@ def _review_queue() -> None:
     resolved = decisions[decisions["reviewer_decision"].isin(["Confirm Match", "Reject Match"])]
     skipped = decisions[decisions["reviewer_decision"] == "Skip"]
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Needs review", f"{len(queue):,}")
+    c1.metric("Grey-zone pairs", f"{len(queue):,}")
     c2.metric("Resolved", f"{len(resolved):,}")
     c3.metric("Skipped", f"{len(skipped):,}")
     c4.metric("Pending", f"{len(pending):,}")
-    st.caption("Skip does not finalise a pair. It keeps the pair pending for later review.")
+    st.caption("Skip does not finalise a pair. It keeps the pair in Skipped / Needs Later Review.")
     if pending.empty:
         st.success("No pending review pairs remain.")
         return
@@ -240,6 +274,7 @@ def _review_queue() -> None:
 
 def _threshold_analysis() -> None:
     st.markdown("## Threshold Analysis")
+    st.caption("Threshold sweep results show the trade-off between F1-score, recall, and human review workload.")
     sweep = _load(CONFIG.paths.threshold_sweep)
     if not sweep.empty:
         st.dataframe(sweep)
@@ -255,11 +290,13 @@ def _threshold_analysis() -> None:
 def _report_outputs() -> None:
     st.markdown("## Report Outputs")
     for path in [
+        CONFIG.paths.dataset_profile,
         CONFIG.paths.problem_formulation,
         CONFIG.paths.methodology_summary,
+        CONFIG.paths.blocking_summary,
         CONFIG.paths.evaluation_summary,
+        CONFIG.paths.threshold_sweep_summary,
         CONFIG.paths.limitations,
-        CONFIG.paths.weekly_reflection_change_summary,
     ]:
         if path.exists():
             with st.expander(path.name):
@@ -269,11 +306,14 @@ def _report_outputs() -> None:
 def main() -> None:
     st.set_page_config(page_title="EMPI HITL Record Linkage", layout="wide")
     st.title("AI-Assisted HITL Record Linkage")
-    st.caption("FEBRL benchmark, EMPI-inspired scoring, and operational review of ambiguous links.")
+    st.caption("FEBRL benchmark, EMPI-inspired scoring, and operational review of grey-zone links.")
 
     with st.sidebar:
         st.header("Controls")
         mode = st.selectbox("Review mode", ["merge", "simulate", "ignore"])
+        st.caption(
+            "merge uses saved reviewer decisions, simulate uses FEBRL ground truth for grey-zone review, and ignore leaves grey-zone pairs unresolved."
+        )
         lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
         upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
         if st.button("Run pipeline", type="primary", use_container_width=True):
@@ -294,6 +334,7 @@ def main() -> None:
             "EMPI Workflow",
             "Matching Dashboard",
             "Human Review Queue",
+            "Evaluation Results",
             "Threshold Analysis",
             "Report Outputs",
         ],
@@ -305,6 +346,7 @@ def main() -> None:
         "EMPI Workflow": _workflow,
         "Matching Dashboard": _matching_dashboard,
         "Human Review Queue": _review_queue,
+        "Evaluation Results": _evaluation_results,
         "Threshold Analysis": _threshold_analysis,
         "Report Outputs": _report_outputs,
     }[page]()

@@ -22,6 +22,7 @@ class PathConfig:
     review_decisions_export: Path = tables_dir / "review_decisions.csv"
     final_decisions: Path = tables_dir / "final_decisions.csv"
     evaluation_metrics: Path = tables_dir / "evaluation_metrics.csv"
+    final_evaluation_comparison: Path = tables_dir / "final_evaluation_comparison.csv"
     blocking_stats: Path = tables_dir / "blocking_stats.csv"
     benchmark_table: Path = tables_dir / "benchmark_comparison_table.csv"
     workload_table: Path = tables_dir / "workload_summary_table.csv"
@@ -29,6 +30,7 @@ class PathConfig:
     threshold_sweep: Path = tables_dir / "threshold_sweep.csv"
 
     dataset_profile: Path = reports_dir / "dataset_profile.md"
+    blocking_summary: Path = reports_dir / "blocking_summary.md"
     methodology_summary: Path = reports_dir / "methodology_summary.md"
     problem_formulation: Path = reports_dir / "problem_formulation.md"
     evaluation_summary: Path = reports_dir / "evaluation_summary.md"
@@ -38,7 +40,7 @@ class PathConfig:
     threshold_sweep_summary: Path = reports_dir / "threshold_sweep_summary.md"
 
     benchmark_figure: Path = figures_dir / "benchmark_comparison.png"
-    workload_figure: Path = figures_dir / "review_workload.png"
+    workload_figure: Path = figures_dir / "workload_comparison.png"
     decision_distribution_figure: Path = figures_dir / "decision_distribution.png"
     score_distribution_figure: Path = figures_dir / "score_distribution.png"
     resolution_flow_figure: Path = figures_dir / "resolution_flow.png"

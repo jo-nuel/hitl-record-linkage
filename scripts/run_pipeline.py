@@ -33,14 +33,15 @@ def main() -> None:
     print(f"Candidate pairs: {len(outputs['candidate_pairs']):,}")
     print(f"Review-needed pairs: {len(outputs['review_queue']):,}")
     print("Benchmark comparison:")
-    print(outputs["benchmark_table"].to_string(index=False))
+    print(outputs["final_evaluation_comparison"].to_string(index=False))
     print("Workload comparison:")
     print(outputs["workload_table"].to_string(index=False))
     print("Main outputs:")
-    print(f"- {CONFIG.paths.evaluation_metrics}")
+    print(f"- {CONFIG.paths.final_evaluation_comparison}")
     print(f"- {CONFIG.paths.review_queue}")
     print(f"- {CONFIG.paths.final_decisions}")
     print(f"- {CONFIG.paths.dataset_profile}")
+    print(f"- {CONFIG.paths.blocking_summary}")
     print(f"- {CONFIG.paths.figures_dir}")
 
 

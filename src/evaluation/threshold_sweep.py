@@ -73,6 +73,7 @@ def run_threshold_sweep() -> pd.DataFrame:
                     "auto_non_match_count": ai_only["auto_non_matches"],
                     "review_needed_count": ai_only["review_needed_pairs"],
                     "review_workload_percentage": ai_only["review_needed_pairs"] / len(pairs),
+                    "workload_reduction_vs_full_review": 1 - (ai_only["review_needed_pairs"] / len(pairs)),
                     "false_positives": ai_only["false_positives"],
                     "false_negatives": ai_only["false_negatives"],
                 }
@@ -86,8 +87,11 @@ def run_threshold_sweep() -> pd.DataFrame:
         f"Best lower threshold: {best['lower_threshold']:.2f}\n\n"
         f"Best upper threshold: {best['upper_threshold']:.2f}\n\n"
         f"AI + HITL simulated F1-score: {best['ai_hitl_f1_score']:.3f}\n\n"
+        f"AI + HITL simulated recall: {best['ai_hitl_recall']:.3f}\n\n"
         f"Review-needed pairs: {int(best['review_needed_count']):,}\n\n"
-        f"Review workload percentage: {best['review_workload_percentage']:.3%}\n",
+        f"Review workload percentage: {best['review_workload_percentage']:.3%}\n\n"
+        f"Workload reduction compared with full candidate review: {best['workload_reduction_vs_full_review']:.3%}\n\n"
+        "Selected threshold rationale: this setting keeps the strongest AI + HITL F1-score while keeping the grey-zone review workload below 1% of blocked candidate pairs.\n",
         encoding="utf-8",
     )
     _plot_lines(sweep, "ai_hitl_f1_score", CONFIG.paths.threshold_f1_figure, "Threshold vs F1", "AI + HITL simulated F1")

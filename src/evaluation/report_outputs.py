@@ -12,10 +12,9 @@ from src.utils.io import ensure_directories_exist, save_csv
 
 
 DISPLAY_LABELS = {
-    "manual_blocked_benchmark": "Manual Benchmark, Blocked Set",
-    "ai_only": "AI Only",
-    "ai_hitl_simulated": "AI + HITL Simulated",
-    "ai_hitl_review_file": "AI + HITL Review File",
+    "manual_blocked_benchmark": "Human-only Clerical Review Baseline",
+    "ai_only": "AI-only EMPI Matcher",
+    "ai_hitl_simulated": "AI + HITL Grey-Zone Review",
 }
 
 
@@ -28,6 +27,31 @@ def benchmark_table(metrics: pd.DataFrame) -> pd.DataFrame:
     table = metrics[columns].copy()
     table["approach"] = table["approach"].map(display_label)
     return table.round(3)
+
+
+def final_evaluation_comparison(metrics: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    interpretations = {
+        "manual_blocked_benchmark": "Highest workload because every blocked candidate pair is reviewed.",
+        "ai_only": "No manual workload, but grey-zone true links are missed when left unresolved.",
+        "ai_hitl_simulated": "Best accuracy-efficiency trade-off by reviewing only grey-zone pairs.",
+    }
+    for _, row in metrics.iterrows():
+        rows.append(
+            {
+                "Method": display_label(row["approach"]),
+                "Precision": round(float(row["precision"]), 3),
+                "Recall": round(float(row["recall"]), 3),
+                "F1-score": round(float(row["f1_score"]), 3),
+                "False positives": int(row["false_positives"]),
+                "False negatives": int(row["false_negatives"]),
+                "Candidate pairs reviewed": int(row["pairs_reviewed"]),
+                "Review workload percentage": round(float(row["review_workload_percent"]) * 100, 3),
+                "Estimated review time": f"{float(row['estimated_review_seconds']):,.0f} seconds",
+                "Key interpretation": interpretations[row["approach"]],
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def workload_table(metrics: pd.DataFrame) -> pd.DataFrame:
@@ -142,11 +166,27 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
         encoding="utf-8",
     )
     CONFIG.paths.methodology_summary.write_text(
-        "# Methodology Summary\n\nThe workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares fields with Jaro-Winkler and exact agreement, combines ECM probability with a Hybrid EMPI-style evidence score, and sends uncertain pairs to human review.\n",
+        "# Methodology Summary\n\nThe workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares fields with Jaro-Winkler and exact agreement, combines ECM probability with a Hybrid EMPI-style evidence score, and sends grey-zone pairs to human review.\n",
+        encoding="utf-8",
+    )
+    CONFIG.paths.blocking_summary.write_text(
+        "# Blocking Summary\n\n"
+        f"Total possible pairs: {int(blocking_stats['total_possible_pairs']):,}\n\n"
+        f"Candidate pairs after blocking: {int(blocking_stats['candidate_pairs']):,}\n\n"
+        f"Reduction ratio: {blocking_stats['reduction_ratio']:.3f}\n\n"
+        f"True links retained: {int(blocking_stats['true_links_retained']):,}\n\n"
+        f"Missed true links: {int(blocking_stats['true_links_missed']):,}\n\n"
+        f"Blocking recall / pair completeness: {blocking_stats['blocking_recall']:.3f}\n\n"
+        f"Blocking rules: {blocking_stats['blocking_rules']}\n",
         encoding="utf-8",
     )
     CONFIG.paths.evaluation_summary.write_text(
-        "# Evaluation Summary\n\n```\n" + benchmark_table(metrics).to_string(index=False) + "\n```\n",
+        "# Evaluation Summary\n\n"
+        "The final comparison uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.\n\n"
+        "AI-only treats grey-zone pairs as unresolved non-positive predictions, so true links in the grey zone count as missed links.\n\n"
+        "```\n"
+        + final_evaluation_comparison(metrics).to_string(index=False)
+        + "\n```\n",
         encoding="utf-8",
     )
     CONFIG.paths.limitations.write_text(
@@ -154,7 +194,7 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
         encoding="utf-8",
     )
     CONFIG.paths.weekly_reflection_change_summary.write_text(
-        "# Weekly Reflection Change Summary\n\nAfter feedback, we removed the Synthea-based duplicate generation pipeline because it weakened evaluation validity. We moved to FEBRL as the primary dataset because it provides benchmark linkage data with ground-truth links. We also changed the matching design toward an EMPI-inspired workflow using multi-pass blocking, field-level evidence, probabilistic or hybrid scoring, threshold tuning, and human review of uncertain pairs. This made the project more realistic, more defensible, and better aligned with healthcare patient matching systems.\n",
+        "# Weekly Reflection Change Summary\n\nAfter peer feedback, we removed the Synthea-based duplicate generation pipeline because it weakened evaluation validity. We moved to FEBRL as the primary benchmark dataset because it provides known true links for record linkage evaluation. We also redesigned the system toward an EMPI-inspired workflow using preprocessing, multi-pass blocking, field-level comparison, hybrid/probabilistic scoring, threshold-based uncertainty triage, and human review of grey-zone pairs. This made the prototype more realistic, more defensible, and better aligned with healthcare patient matching workflows.\n",
         encoding="utf-8",
     )
     CONFIG.paths.experiment_summary.write_text(
@@ -177,9 +217,11 @@ def generate_report_outputs(
 ) -> dict[str, pd.DataFrame]:
     ensure_directories_exist(CONFIG.paths.tables_dir, CONFIG.paths.figures_dir, CONFIG.paths.reports_dir)
     benchmark = benchmark_table(metrics)
+    final_comparison = final_evaluation_comparison(metrics)
     workload = workload_table(metrics)
     decisions_table = decision_counts_table(classified, final_pairs, decisions)
     save_csv(metrics, CONFIG.paths.evaluation_metrics)
+    save_csv(final_comparison, CONFIG.paths.final_evaluation_comparison)
     save_csv(benchmark, CONFIG.paths.benchmark_table)
     save_csv(workload, CONFIG.paths.workload_table)
     save_csv(decisions_table, CONFIG.paths.decision_counts_table)
@@ -189,4 +231,9 @@ def generate_report_outputs(
     _save_figure(build_score_distribution_figure(classified), CONFIG.paths.score_distribution_figure)
     _save_figure(build_resolution_flow_figure(final_pairs), CONFIG.paths.resolution_flow_figure)
     write_report_texts(metrics, blocking_stats)
-    return {"benchmark_table": benchmark, "workload_table": workload, "decision_counts_table": decisions_table}
+    return {
+        "benchmark_table": benchmark,
+        "final_evaluation_comparison": final_comparison,
+        "workload_table": workload,
+        "decision_counts_table": decisions_table,
+    }

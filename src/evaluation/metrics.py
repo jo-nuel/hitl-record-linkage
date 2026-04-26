@@ -50,9 +50,6 @@ def evaluate_results(
     review_needed = int((final_pairs["model_decision"] == "Needs Human Review").sum())
     auto_matches = int((final_pairs["model_decision"] == "Auto Match").sum())
     auto_non_matches = int((final_pairs["model_decision"] == "Auto Non-match").sum())
-    resolved_by_human = int(final_pairs["reviewer_decision"].isin(["Confirm Match", "Reject Match"]).sum())
-    pending = int((final_pairs["final_decision"] == "Needs Human Review").sum())
-
     review_truth = final_pairs[
         (final_pairs["model_decision"] == "Needs Human Review") & (final_pairs["is_true_link"] == 1)
     ]
@@ -70,7 +67,6 @@ def evaluate_results(
         ("manual_blocked_benchmark", manual_blocked, candidate_count, 0),
         ("ai_only", _keys(final_pairs, "model_decision", "Auto Match"), 0, review_needed),
         ("ai_hitl_simulated", simulated_hitl, review_needed, 0),
-        ("ai_hitl_review_file", _keys(final_pairs, "final_decision", "Match"), resolved_by_human, pending),
     ]
 
     rows = []
