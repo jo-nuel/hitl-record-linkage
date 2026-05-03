@@ -41,6 +41,7 @@ def _normalise_date(value: object) -> str:
 
 
 def preprocess_records(df: pd.DataFrame) -> pd.DataFrame:
+    """Standardise FEBRL identity fields and create helper fields for blocking."""
     processed = pd.DataFrame(index=df.index.astype(str))
     processed.index.name = "record_id"
 
@@ -55,6 +56,8 @@ def preprocess_records(df: pd.DataFrame) -> pd.DataFrame:
             processed[column] = processed[column].map(_normalise_text)
 
     if not processed["address"].str.strip().any():
+        # FEBRL4 stores address components separately, so combine them for
+        # comparison and reviewer display when no full address column exists.
         processed["address"] = (
             processed["street_number"] + " " + processed["address_1"] + " " + processed["address_2"]
         ).map(_normalise_text)

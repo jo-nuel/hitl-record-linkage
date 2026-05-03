@@ -6,6 +6,10 @@ University research prototype for:
 
 The prototype demonstrates an EMPI-inspired linkage workflow using FEBRL benchmark data. The system automatically resolves clear record pairs and escalates grey-zone pairs for human review.
 
+## Research Question
+
+To what extent can an AI-assisted human-in-the-loop record linkage system improve duplicate patient record detection compared with clerical review and AI-only matching?
+
 ## Dataset Change: Synthea To FEBRL
 
 The project originally used a locally constructed evaluation dataset. Peer feedback showed that FEBRL is a stronger benchmark because it provides known true links for record linkage evaluation.
@@ -13,6 +17,8 @@ The project originally used a locally constructed evaluation dataset. Peer feedb
 The active implementation now uses FEBRL4 from the Python Record Linkage Toolkit. FEBRL4 supports two-file linkage with dataset A, dataset B, and ground-truth links.
 
 FEBRL is fictitious benchmark data. It is not real hospital production data.
+
+No raw dataset download is required. FEBRL4 is loaded through the `recordlinkage` Python package.
 
 ## Research Claim
 
@@ -42,14 +48,21 @@ An EMPI-inspired AI + HITL workflow can improve the accuracy-efficiency trade-of
 
 ## Setup
 
+Recommended Python version: Python 3.11.
+
 ```bash
+python --version
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Run Pipeline
+## Clean Benchmark Run
+
+Use `simulate` for reproducible benchmark outputs. This mode uses FEBRL ground truth to simulate an ideal human reviewer for grey-zone pairs.
 
 ```bash
-python scripts/run_pipeline.py
+python scripts/run_pipeline.py --review-mode simulate
 ```
 
 ## Run Threshold Sweep
@@ -64,6 +77,9 @@ python scripts/run_threshold_sweep.py
 python scripts/validate_outputs.py
 ```
 
+Additional reproducibility notes are in `docs/reproducibility_checklist.md`.
+Repository structure notes are in `docs/repository_structure.md`.
+
 ## Run Dashboard
 
 ```bash
@@ -72,9 +88,22 @@ streamlit run app.py
 
 Dashboard review modes:
 
-- `merge` uses saved reviewer decisions from `data/review_decisions.csv`.
-- `simulate` resolves grey-zone pairs with FEBRL ground truth for benchmark evaluation.
-- `ignore` leaves grey-zone pairs unresolved.
+- `simulate` uses FEBRL ground truth to simulate an ideal human reviewer resolving grey-zone pairs. This is best for reproducible benchmark evaluation.
+- `merge` uses saved live reviewer decisions from `data/review_decisions.csv` where available. This is best for demo continuity, not the default benchmark.
+- `ignore` does not apply human correction to grey-zone pairs. This is best for AI-only style inspection.
+
+Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode.
+
+`review_queue.csv`, `classified_pairs.csv`, and `final_decisions.csv` are exported without ground-truth labels so reviewer-facing and presentation-facing files do not reveal the answer. Simulated benchmark review decisions are written separately to `outputs/tables/simulated_review_decisions.csv`.
+
+## Scoring Method
+
+The matcher blends two signals:
+
+- `recordlinkage.ECMClassifier` probability where available.
+- A Hybrid EMPI-style evidence score based on field-level agreement.
+
+The hybrid score gives stronger weight to fields such as date of birth, surname, postcode, and address because they provide stronger identity evidence than broader or often-missing fields. Pairs above the upper threshold become Auto Match. Pairs below the lower threshold become Auto Non-match. Pairs between the thresholds enter grey-zone human review.
 
 ## Main Outputs
 
@@ -83,15 +112,17 @@ Dashboard review modes:
 - `outputs/tables/threshold_sweep.csv`
 - `outputs/tables/review_queue.csv`
 - `outputs/tables/final_decisions.csv`
+- `outputs/tables/simulated_review_decisions.csv`
 - `outputs/reports/dataset_profile.md`
 - `outputs/reports/blocking_summary.md`
+- `outputs/reports/scoring_method_summary.md`
 - `outputs/reports/evaluation_summary.md`
 - `outputs/reports/threshold_sweep_summary.md`
 - `outputs/reports/methodology_summary.md`
 - `outputs/reports/limitations.md`
-- `outputs/reports/weekly_reflection_change_summary.md`
 - `outputs/figures/benchmark_comparison.png`
 - `outputs/figures/workload_comparison.png`
+- `outputs/figures/workload_percentage.png`
 - `outputs/figures/decision_distribution.png`
 - `outputs/figures/score_distribution.png`
 - `outputs/figures/threshold_vs_f1.png`

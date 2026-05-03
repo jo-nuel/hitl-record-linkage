@@ -23,6 +23,7 @@ VALID_REVIEW_MODES = {"merge", "simulate", "ignore"}
 
 
 def _save_true_links(true_links: pd.MultiIndex) -> None:
+    """Save FEBRL ground-truth links for internal evaluation traceability."""
     save_csv(
         pd.DataFrame([{"record_id_a": left, "record_id_b": right} for left, right in true_links]),
         CONFIG.paths.true_links,
@@ -30,6 +31,7 @@ def _save_true_links(true_links: pd.MultiIndex) -> None:
 
 
 def _attach_record_fields(classified_features: pd.DataFrame, df_a: pd.DataFrame, df_b: pd.DataFrame) -> pd.DataFrame:
+    """Attach readable record fields so the Streamlit reviewer can inspect each pair."""
     pairs = classified_features.reset_index()
     pairs = pairs.rename(columns={pairs.columns[0]: "record_id_a", pairs.columns[1]: "record_id_b"})
     fields = [
@@ -49,6 +51,7 @@ def _attach_record_fields(classified_features: pd.DataFrame, df_a: pd.DataFrame,
 
 
 def _simulated_review_decisions(review_queue: pd.DataFrame, lower: float, upper: float) -> pd.DataFrame:
+    """Simulate an ideal reviewer by resolving grey-zone pairs with FEBRL ground truth."""
     rows = []
     for _, pair in review_queue.iterrows():
         reviewer_decision = "Confirm Match" if int(pair["is_true_link"]) == 1 else "Reject Match"
@@ -77,11 +80,17 @@ def _simulated_review_decisions(review_queue: pd.DataFrame, lower: float, upper:
     return pd.DataFrame(rows)
 
 
+def _drop_ground_truth_for_export(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove internal labels before writing public-facing pair outputs."""
+    return df.drop(columns=["is_true_link"], errors="ignore")
+
+
 def run_experiment(
     review_mode: str = "merge",
     lower_threshold: float | None = None,
     upper_threshold: float | None = None,
 ) -> dict[str, object]:
+    """Run the FEBRL EMPI pipeline and write evidence outputs for the prototype."""
     CONFIG.validate()
     if review_mode not in VALID_REVIEW_MODES:
         raise ValueError(f"review_mode must be one of {sorted(VALID_REVIEW_MODES)}")
@@ -105,13 +114,16 @@ def run_experiment(
     classified_pairs = add_ground_truth_labels(classified_pairs, true_links)
     runtime_seconds = time.perf_counter() - start
 
-    review_queue = build_review_queue(classified_pairs)
-    save_csv(classified_pairs, CONFIG.paths.classified_pairs)
+    review_queue_internal = build_review_queue(classified_pairs, include_ground_truth=True)
+    review_queue = build_review_queue(classified_pairs, include_ground_truth=False)
+    save_csv(_drop_ground_truth_for_export(classified_pairs), CONFIG.paths.classified_pairs)
     save_csv(review_queue, CONFIG.paths.review_queue)
     save_csv(pd.DataFrame([blocking_stats]), CONFIG.paths.blocking_stats)
 
     if review_mode == "simulate":
-        review_decisions = _simulated_review_decisions(review_queue, lower, upper)
+        review_decisions = _simulated_review_decisions(review_queue_internal, lower, upper)
+        save_review_decisions(review_decisions, CONFIG.paths.simulated_review_decisions)
+        save_review_decisions(pd.DataFrame(), CONFIG.paths.review_decisions_export)
     elif review_mode == "merge":
         review_decisions = load_review_decisions(CONFIG.paths.review_decisions)
         valid_keys = set(zip(classified_pairs["record_id_a"], classified_pairs["record_id_b"]))
@@ -119,12 +131,15 @@ def run_experiment(
             review_decisions = review_decisions[
                 review_decisions.apply(lambda row: (row["record_id_a"], row["record_id_b"]) in valid_keys, axis=1)
             ]
+        save_review_decisions(pd.DataFrame(), CONFIG.paths.simulated_review_decisions)
+        save_review_decisions(review_decisions, CONFIG.paths.review_decisions_export)
     else:
         review_decisions = pd.DataFrame()
+        save_review_decisions(pd.DataFrame(), CONFIG.paths.simulated_review_decisions)
+        save_review_decisions(review_decisions, CONFIG.paths.review_decisions_export)
 
-    save_review_decisions(review_decisions, CONFIG.paths.review_decisions_export)
     final_decisions = apply_review_decisions(classified_pairs, review_decisions)
-    save_csv(final_decisions, CONFIG.paths.final_decisions)
+    save_csv(_drop_ground_truth_for_export(final_decisions), CONFIG.paths.final_decisions)
     metrics = evaluate_results(final_decisions, true_links, blocking_stats, runtime_seconds)
     report_tables = generate_report_outputs(metrics, classified_pairs, final_decisions, review_decisions, blocking_stats)
 

@@ -4,10 +4,12 @@ from src.utils.config import CONFIG
 
 
 def true_link_set(true_links: pd.MultiIndex) -> set[tuple[str, str]]:
+    """Convert FEBRL true links into comparable string tuple keys."""
     return {(str(left), str(right)) for left, right in true_links}
 
 
 def add_ground_truth_labels(pairs: pd.DataFrame, true_links: pd.MultiIndex) -> pd.DataFrame:
+    """Attach ground-truth labels for internal evaluation only."""
     truth = true_link_set(true_links)
     labeled = pairs.copy()
     labeled["is_true_link"] = labeled.apply(
@@ -45,6 +47,7 @@ def evaluate_results(
     blocking_stats: dict[str, float],
     runtime_seconds: float,
 ) -> pd.DataFrame:
+    """Evaluate clerical baseline, AI-only, and simulated AI + HITL conditions."""
     truth = true_link_set(true_links)
     candidate_count = len(final_pairs)
     review_needed = int((final_pairs["model_decision"] == "Needs Human Review").sum())
@@ -53,6 +56,8 @@ def evaluate_results(
     review_truth = final_pairs[
         (final_pairs["model_decision"] == "Needs Human Review") & (final_pairs["is_true_link"] == 1)
     ]
+    # Formal AI + HITL evaluation uses FEBRL ground truth to simulate an ideal
+    # reviewer for grey-zone pairs, keeping benchmark results reproducible.
     simulated_hitl = _keys(final_pairs, "model_decision", "Auto Match") | set(
         zip(review_truth["record_id_a"].astype(str), review_truth["record_id_b"].astype(str))
     )

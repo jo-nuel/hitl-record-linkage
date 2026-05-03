@@ -125,6 +125,10 @@ def _workflow() -> None:
         "The matcher uses ECM probability where available and blends it with a Hybrid EMPI-style evidence score. "
         "The hybrid score combines multiple identity fields and applies conflict penalties for major disagreements."
     )
+    st.info(
+        "Scores at or above the upper threshold become Auto Match. Scores at or below the lower threshold become Auto Non-match. "
+        "Scores between the thresholds form the grey-zone review queue."
+    )
 
 
 def _matching_dashboard() -> None:
@@ -153,12 +157,17 @@ def _matching_dashboard() -> None:
         _show_image(CONFIG.paths.resolution_flow_figure, "Resolution flow.")
     with right:
         _show_image(CONFIG.paths.workload_figure, "Workload comparison.")
+    _show_image(CONFIG.paths.workload_percentage_figure, "Review workload percentage.")
 
 
 def _evaluation_results() -> None:
     st.markdown("## Evaluation Results")
     st.caption(
         "The final comparison uses three conditions: human-only clerical review, AI-only matching, and AI + HITL grey-zone review."
+    )
+    st.info(
+        "Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. "
+        "Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode."
     )
     comparison = _load(CONFIG.paths.final_evaluation_comparison)
     if comparison.empty:
@@ -175,6 +184,7 @@ def _evaluation_results() -> None:
         _show_image(CONFIG.paths.score_distribution_figure, "Score distribution.")
     with right:
         _show_image(CONFIG.paths.workload_figure, "Workload comparison.")
+    _show_image(CONFIG.paths.workload_percentage_figure, "Review workload percentage.")
 
 
 def _field_evidence(pair: pd.Series) -> pd.DataFrame:
@@ -214,6 +224,9 @@ def _field_evidence(pair: pd.Series) -> pd.DataFrame:
 def _review_queue() -> None:
     st.markdown("## Human Review Queue")
     st.caption("Review one grey-zone candidate pair at a time. Confirm and reject decisions are final review outcomes. Skip keeps the pair for later.")
+    st.info(
+        "This page demonstrates the operational HITL loop. Live decisions are saved to the review audit log, while the formal AI + HITL benchmark uses simulated grey-zone review from FEBRL ground truth for reproducibility."
+    )
     queue = _load(CONFIG.paths.review_queue, dtype=str)
     decisions = load_review_decisions(CONFIG.paths.review_decisions)
     if queue.empty:
@@ -291,8 +304,8 @@ def _report_outputs() -> None:
     st.markdown("## Report Outputs")
     for path in [
         CONFIG.paths.dataset_profile,
-        CONFIG.paths.problem_formulation,
         CONFIG.paths.methodology_summary,
+        CONFIG.paths.scoring_method_summary,
         CONFIG.paths.blocking_summary,
         CONFIG.paths.evaluation_summary,
         CONFIG.paths.threshold_sweep_summary,
@@ -311,9 +324,9 @@ def main() -> None:
     with st.sidebar:
         st.header("Controls")
         mode = st.selectbox("Review mode", ["merge", "simulate", "ignore"])
-        st.caption(
-            "merge uses saved reviewer decisions, simulate uses FEBRL ground truth for grey-zone review, and ignore leaves grey-zone pairs unresolved."
-        )
+        st.caption("simulate: uses FEBRL ground truth to simulate an ideal reviewer. Best for reproducible benchmark evaluation.")
+        st.caption("merge: uses saved live reviewer decisions where available. Best for demo continuity.")
+        st.caption("ignore: leaves grey-zone pairs unresolved. Best for AI-only style inspection.")
         lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
         upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
         if st.button("Run pipeline", type="primary", use_container_width=True):

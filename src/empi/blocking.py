@@ -16,6 +16,11 @@ def generate_candidate_pairs(
     df_b: pd.DataFrame,
     true_links: pd.MultiIndex | None = None,
 ) -> tuple[pd.MultiIndex, dict[str, float]]:
+    """Generate candidate pairs with multi-pass blocking.
+
+    Blocking avoids comparing every possible pair while tracking how many FEBRL
+    true links remain available for downstream scoring and review.
+    """
     indexer = recordlinkage.Index()
     applied_rules: list[str] = []
 

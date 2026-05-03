@@ -6,6 +6,7 @@ from src.utils.io import ensure_directories_exist
 
 
 def _standardise_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Use stable string record IDs so FEBRL links compare consistently."""
     standardised = df.copy()
     standardised.index = standardised.index.astype(str)
     standardised.index.name = "record_id"
@@ -61,6 +62,11 @@ def load_febrl_dataset(
     dataset_name: str = "febrl4",
     return_links: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.MultiIndex]:
+    """Load the FEBRL benchmark dataset used for final evaluation.
+
+    FEBRL4 is the default because it provides two related person-record
+    datasets and known true links for reproducible record linkage evaluation.
+    """
     dataset = dataset_name.lower().strip()
     if dataset != "febrl4":
         loaders = {

@@ -28,12 +28,18 @@ DECISION_COLUMNS = [
 ]
 
 
-def build_review_queue(classified_pairs: pd.DataFrame) -> pd.DataFrame:
+def build_review_queue(classified_pairs: pd.DataFrame, include_ground_truth: bool = False) -> pd.DataFrame:
+    """Build the grey-zone review queue from model-classified candidate pairs."""
     queue = classified_pairs[classified_pairs["model_decision"] == "Needs Human Review"].copy()
+    if not include_ground_truth:
+        # Ground truth is intentionally excluded from the review queue to avoid
+        # label leakage during the human-in-the-loop demonstration.
+        queue = queue.drop(columns=["is_true_link"], errors="ignore")
     return queue.sort_values("model_score", ascending=False).reset_index(drop=True)
 
 
 def load_review_decisions(path: Path) -> pd.DataFrame:
+    """Load saved live review decisions, preserving the expected audit-log schema."""
     if not path.exists():
         return pd.DataFrame(columns=DECISION_COLUMNS)
     decisions = pd.read_csv(path, dtype=str).fillna("")
@@ -44,6 +50,7 @@ def load_review_decisions(path: Path) -> pd.DataFrame:
 
 
 def save_review_decisions(decisions: pd.DataFrame, path: Path, export_path: Path | None = None) -> None:
+    """Persist reviewer decisions locally and optionally export a copy to outputs."""
     ensure_directories_exist(path.parent)
     for column in DECISION_COLUMNS:
         if column not in decisions.columns:
@@ -62,6 +69,7 @@ def upsert_review_decision(
     lower_threshold: float,
     upper_threshold: float,
 ) -> pd.DataFrame:
+    """Insert or replace a reviewer decision for one candidate pair."""
     final_decision = {
         "Confirm Match": "Match",
         "Reject Match": "Non-match",
@@ -92,6 +100,7 @@ def upsert_review_decision(
 
 
 def pending_review_queue(queue: pd.DataFrame, decisions: pd.DataFrame) -> pd.DataFrame:
+    """Return review pairs that still need a final Confirm Match or Reject Match."""
     resolved = decisions[decisions["reviewer_decision"].isin(["Confirm Match", "Reject Match"])]
     resolved_keys = set(zip(resolved["record_id_a"], resolved["record_id_b"]))
     pending = queue[
@@ -109,6 +118,7 @@ def pending_review_queue(queue: pd.DataFrame, decisions: pd.DataFrame) -> pd.Dat
 
 
 def apply_review_decisions(classified_pairs: pd.DataFrame, decisions: pd.DataFrame) -> pd.DataFrame:
+    """Merge saved review decisions with model decisions to produce final decisions."""
     resolved = classified_pairs.copy()
     resolved = resolved.merge(
         decisions[["record_id_a", "record_id_b", "reviewer_decision", "final_decision", "notes"]]

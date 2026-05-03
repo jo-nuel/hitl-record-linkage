@@ -28,6 +28,7 @@ def compute_comparison_features(
     df_a: pd.DataFrame,
     df_b: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Compute field-level evidence for each candidate pair."""
     compare = recordlinkage.Compare()
     labels: list[str] = []
 
@@ -50,6 +51,7 @@ def compute_comparison_features(
 
 
 def interpret_evidence(value_a: str, value_b: str, similarity: float) -> str:
+    """Convert a numeric field score into reviewer-friendly evidence text."""
     a_missing = str(value_a).strip() == ""
     b_missing = str(value_b).strip() == ""
     if a_missing and b_missing:

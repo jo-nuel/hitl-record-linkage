@@ -1,3 +1,0 @@
-# Weekly Reflection Change Summary
-
-After peer feedback, we removed the Synthea-based duplicate generation pipeline because it weakened evaluation validity. We moved to FEBRL as the primary benchmark dataset because it provides known true links for record linkage evaluation. We also redesigned the system toward an EMPI-inspired workflow using preprocessing, multi-pass blocking, field-level comparison, hybrid/probabilistic scoring, threshold-based uncertainty triage, and human review of grey-zone pairs. This made the prototype more realistic, more defensible, and better aligned with healthcare patient matching workflows.

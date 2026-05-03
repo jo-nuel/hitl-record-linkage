@@ -16,6 +16,7 @@ FIELD_WEIGHTS = {
 
 
 def _hybrid_score(features: pd.DataFrame) -> pd.Series:
+    """Combine field-level agreement scores using EMPI-inspired weights."""
     available_weight = sum(weight for column, weight in FIELD_WEIGHTS.items() if column in features.columns)
     if available_weight == 0:
         raise ValueError("No supported comparison features found for EMPI scoring.")
@@ -27,6 +28,7 @@ def _hybrid_score(features: pd.DataFrame) -> pd.Series:
 
 
 def _apply_disagreement_penalties(score: pd.Series, features: pd.DataFrame) -> pd.Series:
+    """Reduce confidence when major identity fields strongly disagree."""
     adjusted = score.copy()
     if "date_of_birth_exact" in features.columns:
         adjusted -= np.where(features["date_of_birth_exact"] < 0.5, 0.08, 0)
@@ -40,6 +42,7 @@ def _apply_disagreement_penalties(score: pd.Series, features: pd.DataFrame) -> p
 
 
 def _ecm_probability(features: pd.DataFrame) -> pd.Series:
+    """Estimate unsupervised match probability with ECM, falling back if unavailable."""
     binary = features.copy()
     for column in binary.columns:
         if column.endswith("_sim"):
@@ -60,6 +63,7 @@ def classify_pairs(
     upper_threshold: float,
     ecm_weight: float,
 ) -> pd.DataFrame:
+    """Score candidate pairs and route grey-zone pairs to human review."""
     if lower_threshold >= upper_threshold:
         raise ValueError("lower_threshold must be less than upper_threshold")
 

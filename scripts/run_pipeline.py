@@ -12,6 +12,7 @@ from src.utils.config import CONFIG  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse reproducible pipeline options from the command line."""
     parser = argparse.ArgumentParser(description="Run the FEBRL EMPI-inspired linkage pipeline.")
     parser.add_argument("--review-mode", choices=["merge", "simulate", "ignore"], default="merge")
     parser.add_argument("--lower-threshold", type=float, default=CONFIG.matcher.lower_threshold)
@@ -20,6 +21,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run the pipeline and print the key evidence outputs."""
     args = parse_args()
     outputs = run_experiment(
         review_mode=args.review_mode,

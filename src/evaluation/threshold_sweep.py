@@ -35,6 +35,7 @@ def _plot_lines(df: pd.DataFrame, y: str, path, title: str, ylabel: str) -> None
 
 
 def run_threshold_sweep() -> pd.DataFrame:
+    """Evaluate threshold settings to show the recall-workload trade-off."""
     ensure_directories_exist(CONFIG.paths.tables_dir, CONFIG.paths.reports_dir, CONFIG.paths.figures_dir)
     df_a_raw, df_b_raw, true_links = load_febrl_dataset(CONFIG.dataset.name)
     df_a = preprocess_records(df_a_raw)
