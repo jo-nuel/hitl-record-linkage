@@ -46,18 +46,62 @@ An EMPI-inspired AI + HITL workflow can improve the accuracy-efficiency trade-of
 3. AI + HITL Grey-Zone Review
    The matcher resolves clear cases automatically. Grey-zone pairs are resolved using simulated ideal human review based on FEBRL true links.
 
-## Setup
+## Developer Quick Start
 
-Recommended Python version: Python 3.11.
+Recommended Python version: **Python 3.11**.
+
+This project uses the Python scientific stack plus the Python Record Linkage Toolkit. The dependency pins in `requirements.txt` are intended for Python 3.11. Avoid Python 3.13 for this project because some pinned packages may not provide compatible wheels.
+
+No raw dataset download is required. FEBRL4 is loaded through the `recordlinkage` package during the pipeline run.
+
+### 1. Clone And Enter The Repository
+
+```bash
+git clone <repo-url>
+cd hitl-record-linkage
+```
+
+If you already have the repository, pull the latest version first:
+
+```bash
+git pull origin main
+```
+
+### 2. Create A Virtual Environment
 
 ```bash
 python --version
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
 ```
 
-## Clean Benchmark Run
+Activate the environment for your platform.
+
+Windows PowerShell:
+
+```powershell
+.venv\Scripts\activate
+```
+
+macOS / Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If installation fails, first confirm `python --version` shows Python 3.11.x. Most dependency issues are caused by using a newer Python version than the pinned packages support.
+
+## Run The Project
+
+Run commands from the repository root, not from inside `src/`, `scripts/`, or `app/`.
+
+### 1. Clean Benchmark Run
 
 Use `simulate` for reproducible benchmark outputs. This mode uses FEBRL ground truth to simulate an ideal human reviewer for grey-zone pairs.
 
@@ -65,26 +109,39 @@ Use `simulate` for reproducible benchmark outputs. This mode uses FEBRL ground t
 python scripts/run_pipeline.py --review-mode simulate
 ```
 
-## Run Threshold Sweep
+This creates or refreshes the main outputs under:
+
+- `outputs/tables/`
+- `outputs/reports/`
+- `outputs/figures/`
+- `data/review_decisions.csv` if live review decisions are saved through the dashboard
+
+### 2. Run Threshold Sweep
 
 ```bash
 python scripts/run_threshold_sweep.py
 ```
 
-## Validate Outputs
+This evaluates multiple lower and upper threshold settings and writes threshold analysis tables and figures to `outputs/`.
+
+### 3. Validate Outputs
 
 ```bash
 python scripts/validate_outputs.py
 ```
 
+The validation script checks that key tables, reports, figures, and review queue files exist and follow the expected project contract.
+
 Additional reproducibility notes are in `docs/reproducibility_checklist.md`.
 Repository structure notes are in `docs/repository_structure.md`.
 
-## Run Dashboard
+### 4. Run Dashboard
 
 ```bash
 streamlit run app.py
 ```
+
+Open the local Streamlit URL shown in the terminal. It is usually `http://localhost:8501`.
 
 Dashboard review modes:
 
@@ -95,6 +152,22 @@ Dashboard review modes:
 Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode.
 
 `review_queue.csv`, `classified_pairs.csv`, and `final_decisions.csv` are exported without ground-truth labels so reviewer-facing and presentation-facing files do not reveal the answer. Simulated benchmark review decisions are written separately to `outputs/tables/simulated_review_decisions.csv`.
+
+## Platform Notes
+
+- **Windows:** Use PowerShell or Command Prompt from the repository root. If PowerShell blocks virtual environment activation, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in the same terminal, then activate `.venv` again.
+- **macOS:** Use Python 3.11 from python.org, Homebrew, or pyenv. If `python` points to Python 2 or an older system Python, use `python3.11` when creating the virtual environment.
+- **Apple Silicon Macs:** The pinned packages should install through prebuilt wheels on Python 3.11. If pip tries to build NumPy, pandas, scikit-learn, or matplotlib from source, the Python version is probably wrong or pip is outdated.
+- **Linux:** Install Python 3.11 and the matching `venv` package first if your distribution does not include it by default.
+- **All platforms:** Run `python -m pip install --upgrade pip` before installing requirements.
+
+## Common Setup Problems
+
+- **`ModuleNotFoundError: recordlinkage`:** The virtual environment is not active, or requirements were installed into a different Python environment.
+- **Build errors for NumPy, pandas, scikit-learn, or matplotlib:** Use Python 3.11 and upgrade pip before installing requirements.
+- **`streamlit` command not found:** Run `python -m streamlit run app.py` while the virtual environment is active.
+- **FEBRL dataset not found:** Reinstall requirements. FEBRL is provided by the `recordlinkage` package and does not require a separate dataset download.
+- **Outputs are missing:** Run `python scripts/run_pipeline.py --review-mode simulate` before opening the dashboard or validating outputs.
 
 ## Scoring Method
 

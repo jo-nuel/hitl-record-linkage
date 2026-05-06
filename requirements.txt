@@ -1,3 +1,6 @@
+# Tested with Python 3.11. Python 3.13 is not recommended for these pins.
+setuptools>=68
+
 pandas==2.2.2
 numpy==1.26.4
 
