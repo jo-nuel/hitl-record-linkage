@@ -14,6 +14,9 @@ from src.utils.config import CONFIG  # noqa: E402
 REQUIRED_OUTPUTS = [
     CONFIG.paths.final_evaluation_comparison,
     CONFIG.paths.threshold_sweep,
+    CONFIG.paths.model_comparison,
+    CONFIG.paths.active_learning_rounds,
+    CONFIG.paths.random_vs_active_learning,
     CONFIG.paths.review_queue,
     CONFIG.paths.classified_pairs,
     CONFIG.paths.final_decisions,
@@ -23,12 +26,17 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.dataset_profile,
     CONFIG.paths.blocking_summary,
     CONFIG.paths.scoring_method_summary,
+    CONFIG.paths.active_learning_summary,
     CONFIG.paths.benchmark_figure,
     CONFIG.paths.workload_figure,
     CONFIG.paths.workload_percentage_figure,
     CONFIG.paths.threshold_f1_figure,
     CONFIG.paths.threshold_workload_figure,
     CONFIG.paths.recall_workload_figure,
+    CONFIG.paths.model_comparison_f1_figure,
+    CONFIG.paths.active_learning_curve_figure,
+    CONFIG.paths.random_vs_active_learning_figure,
+    CONFIG.paths.label_efficiency_curve_figure,
 ]
 
 
@@ -82,6 +90,29 @@ def _validate_threshold_sweep() -> list[str]:
     return []
 
 
+def _validate_active_learning_outputs() -> list[str]:
+    failures: list[str] = []
+    model_comparison = pd.read_csv(CONFIG.paths.model_comparison)
+    rounds = pd.read_csv(CONFIG.paths.active_learning_rounds)
+    random_vs_active = pd.read_csv(CONFIG.paths.random_vs_active_learning)
+    expected_models = {"Hybrid EMPI Score", "Logistic Regression", "Random Forest", "Gradient Boosting"}
+    if set(model_comparison.get("Method", [])) != expected_models:
+        failures.append("model_comparison.csv must contain Hybrid EMPI Score, Logistic Regression, Random Forest, and Gradient Boosting")
+    required_round_columns = {"Round", "Strategy", "Classifier", "Labelled pairs", "Precision", "Recall", "F1-score"}
+    missing_round_columns = required_round_columns - set(rounds.columns)
+    if missing_round_columns:
+        failures.append(f"active_learning_rounds.csv missing columns: {sorted(missing_round_columns)}")
+    if rounds.empty or random_vs_active.empty:
+        failures.append("active-learning tables must have rows")
+    if "Active Learning" not in set(random_vs_active.get("Strategy", [])):
+        failures.append("random_vs_active_learning.csv must include Active Learning rows")
+    if "Random Sampling" not in set(random_vs_active.get("Strategy", [])):
+        failures.append("random_vs_active_learning.csv must include Random Sampling rows")
+    if not failures:
+        _pass("active-learning model comparison and learning-curve outputs are present")
+    return failures
+
+
 def _validate_review_queue() -> list[str]:
     df = pd.read_csv(CONFIG.paths.review_queue, nrows=5)
     if "is_true_link" in df.columns:
@@ -130,6 +161,7 @@ def main() -> None:
 
     failures.extend(_validate_final_comparison())
     failures.extend(_validate_threshold_sweep())
+    failures.extend(_validate_active_learning_outputs())
     failures.extend(_validate_review_queue())
     failures.extend(_validate_public_pair_exports())
     failures.extend(_validate_config_and_blocking())

@@ -6,6 +6,8 @@ University research prototype for:
 
 The prototype demonstrates an EMPI-inspired linkage workflow using FEBRL benchmark data. The system automatically resolves clear record pairs and escalates grey-zone pairs for human review.
 
+The Streamlit dashboard also presents an active-learning extension. In this workflow, a classifier learns from field-level comparison features, selects uncertain pairs for review, retrains in batches, and is evaluated on a frozen test set.
+
 ## Research Question
 
 To what extent can an AI-assisted human-in-the-loop record linkage system improve duplicate patient record detection compared with clerical review and AI-only matching?
@@ -24,16 +26,17 @@ No raw dataset download is required. FEBRL4 is loaded through the `recordlinkage
 
 An EMPI-inspired AI + HITL workflow can improve the accuracy-efficiency trade-off in duplicate patient record linkage by automatically resolving clear cases and escalating uncertain cases for human review.
 
-## EMPI-Inspired Workflow
+## Active Learning EMPI-Inspired Workflow
 
 1. Load FEBRL4.
 2. Preprocess identity fields.
 3. Generate candidate pairs with multi-pass blocking.
 4. Compare field-level evidence.
-5. Score pairs with ECM probability and a Hybrid EMPI-style evidence score.
-6. Classify pairs as Auto Match, Auto Non-match, or Needs Human Review.
-7. Save reviewer decisions in an audit log.
-8. Evaluate the three final methods.
+5. Score pairs with ECM probability, a Hybrid EMPI-style evidence score, or supervised ML classifiers.
+6. Use uncertainty sampling to select informative grey-zone pairs for review.
+7. Store reviewer labels in an audit log.
+8. Retrain classifiers in batches during the active-learning experiment.
+9. Evaluate workload and accuracy.
 
 ## Three Evaluation Methods
 
@@ -124,7 +127,17 @@ python scripts/run_threshold_sweep.py
 
 This evaluates multiple lower and upper threshold settings and writes threshold analysis tables and figures to `outputs/`.
 
-### 3. Validate Outputs
+### 3. Run Active-Learning Experiment
+
+```bash
+python scripts/run_active_learning.py
+```
+
+This trains lightweight classifiers on FEBRL candidate-pair comparison features, simulates reviewer labels using FEBRL ground truth, and writes active-learning evidence outputs to `outputs/`.
+
+Active-learning benchmark labels are simulated for reproducibility. Live Streamlit review clicks are stored for demonstration and audit logging, but they are not used as the default active-learning benchmark labels.
+
+### 4. Validate Outputs
 
 ```bash
 python scripts/validate_outputs.py
@@ -135,7 +148,7 @@ The validation script checks that key tables, reports, figures, and review queue
 Additional reproducibility notes are in `docs/reproducibility_checklist.md`.
 Repository structure notes are in `docs/repository_structure.md`.
 
-### 4. Run Dashboard
+### 5. Run Dashboard
 
 ```bash
 streamlit run app.py
@@ -152,6 +165,19 @@ Dashboard review modes:
 Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode.
 
 `review_queue.csv`, `classified_pairs.csv`, and `final_decisions.csv` are exported without ground-truth labels so reviewer-facing and presentation-facing files do not reveal the answer. Simulated benchmark review decisions are written separately to `outputs/tables/simulated_review_decisions.csv`.
+
+Dashboard pages:
+
+- Overview
+- Dataset & Blocking
+- Field Evidence
+- Active Learning Workflow
+- Human Review Queue
+- Model Performance
+- Learning Curves
+- Final Evaluation
+- Threshold Analysis
+- Report Evidence
 
 ## Platform Notes
 
@@ -183,6 +209,9 @@ The hybrid score gives stronger weight to fields such as date of birth, surname,
 - `outputs/tables/final_evaluation_comparison.csv`
 - `outputs/tables/evaluation_metrics.csv`
 - `outputs/tables/threshold_sweep.csv`
+- `outputs/tables/model_comparison.csv`
+- `outputs/tables/active_learning_rounds.csv`
+- `outputs/tables/random_vs_active_learning.csv`
 - `outputs/tables/review_queue.csv`
 - `outputs/tables/final_decisions.csv`
 - `outputs/tables/simulated_review_decisions.csv`
@@ -190,6 +219,7 @@ The hybrid score gives stronger weight to fields such as date of birth, surname,
 - `outputs/reports/blocking_summary.md`
 - `outputs/reports/scoring_method_summary.md`
 - `outputs/reports/evaluation_summary.md`
+- `outputs/reports/active_learning_summary.md`
 - `outputs/reports/threshold_sweep_summary.md`
 - `outputs/reports/methodology_summary.md`
 - `outputs/reports/limitations.md`
@@ -201,10 +231,15 @@ The hybrid score gives stronger weight to fields such as date of birth, surname,
 - `outputs/figures/threshold_vs_f1.png`
 - `outputs/figures/threshold_vs_review_workload.png`
 - `outputs/figures/recall_vs_review_workload.png`
+- `outputs/figures/model_comparison_f1.png`
+- `outputs/figures/active_learning_curve.png`
+- `outputs/figures/random_vs_active_learning.png`
+- `outputs/figures/label_efficiency_curve.png`
 
 ## Limitations
 
 - FEBRL is benchmark data, not real hospital production data.
 - AI + HITL uses simulated ideal review when calculating final evaluation metrics.
+- Active-learning experiments also use simulated FEBRL labels for reproducibility.
 - Blocking can miss true links before the matcher or reviewer sees them.
 - Thresholds are selected from a small sweep and need further validation before any deployment claim.

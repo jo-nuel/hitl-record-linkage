@@ -29,6 +29,9 @@ class PathConfig:
     workload_table: Path = tables_dir / "workload_summary_table.csv"
     decision_counts_table: Path = tables_dir / "decision_counts_table.csv"
     threshold_sweep: Path = tables_dir / "threshold_sweep.csv"
+    model_comparison: Path = tables_dir / "model_comparison.csv"
+    active_learning_rounds: Path = tables_dir / "active_learning_rounds.csv"
+    random_vs_active_learning: Path = tables_dir / "random_vs_active_learning.csv"
 
     dataset_profile: Path = reports_dir / "dataset_profile.md"
     blocking_summary: Path = reports_dir / "blocking_summary.md"
@@ -38,6 +41,7 @@ class PathConfig:
     limitations: Path = reports_dir / "limitations.md"
     experiment_summary: Path = reports_dir / "experiment_summary.md"
     threshold_sweep_summary: Path = reports_dir / "threshold_sweep_summary.md"
+    active_learning_summary: Path = reports_dir / "active_learning_summary.md"
 
     benchmark_figure: Path = figures_dir / "benchmark_comparison.png"
     workload_figure: Path = figures_dir / "workload_comparison.png"
@@ -48,6 +52,10 @@ class PathConfig:
     threshold_f1_figure: Path = figures_dir / "threshold_vs_f1.png"
     threshold_workload_figure: Path = figures_dir / "threshold_vs_review_workload.png"
     recall_workload_figure: Path = figures_dir / "recall_vs_review_workload.png"
+    model_comparison_f1_figure: Path = figures_dir / "model_comparison_f1.png"
+    active_learning_curve_figure: Path = figures_dir / "active_learning_curve.png"
+    random_vs_active_learning_figure: Path = figures_dir / "random_vs_active_learning.png"
+    label_efficiency_curve_figure: Path = figures_dir / "label_efficiency_curve.png"
 
 
 @dataclass
@@ -70,13 +78,33 @@ class MatcherConfig:
 
 
 @dataclass
+class ActiveLearningConfig:
+    seed_positive_labels: int = 50
+    seed_negative_labels: int = 150
+    batch_size: int = 150
+    rounds: int = 8
+    test_size: float = 0.25
+    random_state: int = 42
+
+    def validate(self) -> None:
+        if self.seed_positive_labels < 1 or self.seed_negative_labels < 1:
+            raise ValueError("active-learning seed labels must include both classes")
+        if self.batch_size < 1 or self.rounds < 1:
+            raise ValueError("active-learning batch_size and rounds must be positive")
+        if not 0 < self.test_size < 1:
+            raise ValueError("active-learning test_size must be between 0 and 1")
+
+
+@dataclass
 class AppConfig:
     paths: PathConfig = field(default_factory=PathConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     matcher: MatcherConfig = field(default_factory=MatcherConfig)
+    active_learning: ActiveLearningConfig = field(default_factory=ActiveLearningConfig)
 
     def validate(self) -> None:
         self.matcher.validate()
+        self.active_learning.validate()
 
 
 CONFIG = AppConfig()
