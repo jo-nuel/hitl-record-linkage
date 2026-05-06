@@ -1,12 +1,12 @@
-# AI-Assisted HITL Record Linkage
+# AI-Assisted Active Learning HITL Record Linkage
 
 University research prototype for:
 
 **AI-Assisted Human-in-the-Loop Record Linkage for Detecting Duplicate Patient Records in Healthcare Datasets**
 
-The prototype demonstrates an EMPI-inspired HITL record linkage workflow using FEBRL benchmark data. The system automatically resolves clear record pairs and escalates grey-zone pairs for human review.
+Final method: **AI-Assisted Active Learning HITL Record Linkage using FEBRL4**.
 
-The Streamlit dashboard also presents an active-learning ML extension. In this workflow, a classifier learns from field-level comparison features, selects uncertain pairs for review, retrains in batches, and is evaluated on a frozen test set.
+The EMPI-inspired pipeline provides the healthcare-style record linkage structure: preprocessing, blocking, field-level comparison, threshold logic, and professional-style review of uncertain cases. The Active Learning ML Matcher is the main proposed AI + HITL method. In this workflow, a classifier learns from field-level comparison features, selects uncertain pairs for review, receives simulated professional reviewer labels, retrains in batches, and is evaluated on a frozen test set.
 
 Final academic report drafts are kept outside the repository. This repository contains the technical artefact, reproducibility documentation, and generated evidence outputs used to support the final report.
 
@@ -14,19 +14,21 @@ Final academic report drafts are kept outside the repository. This repository co
 
 To what extent can an AI-assisted human-in-the-loop record linkage system improve duplicate patient record detection compared with clerical review and AI-only matching?
 
-## Dataset Change: Synthea To FEBRL
+## Final Dataset: FEBRL4
 
-The project originally used a locally constructed evaluation dataset. Peer feedback showed that FEBRL is a stronger benchmark because it provides known true links for record linkage evaluation.
+The final prototype uses FEBRL4 because it provides two related benchmark datasets and known true links. This allows duplicate record detection to be evaluated reproducibly without relying on internally generated duplicate labels.
 
-The active implementation now uses FEBRL4 from the Python Record Linkage Toolkit. FEBRL4 supports two-file linkage with dataset A, dataset B, and ground-truth links.
+FEBRL4 is loaded from the Python Record Linkage Toolkit. It supports two-file linkage with dataset A, dataset B, and ground-truth links.
 
 FEBRL is fictitious benchmark data. It is not real hospital production data.
 
 No raw dataset download is required. FEBRL4 is loaded through the `recordlinkage` Python package.
 
+Earlier prototypes considered other data options, but Synthea duplicate generation is not part of the final method.
+
 ## Research Claim
 
-An EMPI-inspired AI + HITL workflow can improve the accuracy-efficiency trade-off in duplicate patient record linkage by automatically resolving clear cases and escalating uncertain cases for human review.
+An active-learning ML-based HITL record linkage workflow can improve duplicate patient record detection by using human review labels to improve the matcher while reducing unnecessary manual review.
 
 ## EMPI-Inspired HITL Workflow
 
@@ -45,20 +47,26 @@ The main system is **EMPI-inspired HITL record linkage**. It provides the health
 
 The **Hybrid EMPI-style score** is kept as a transparent non-ML baseline, fallback scoring method, and explainability layer. It is based on field-level weights and disagreement penalties.
 
-The **Active Learning ML matcher** is the main AI extension. It learns from field-level comparison features, predicts match probability, selects uncertain pairs for review, simulates reviewer labels with FEBRL ground truth for reproducible experiments, and retrains in batches.
+The **Active Learning ML Matcher** is the main proposed AI + HITL method. It learns from field-level comparison features, predicts match probability, selects uncertain pairs for review, simulates reviewer labels with FEBRL ground truth for reproducible experiments, and retrains in batches.
 
-The main three-condition evaluation remains separate from the active-learning extension. The three-condition evaluation compares Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review. The active-learning experiment tests whether reviewer labels can improve an ML classifier over training rounds.
+The supporting three-condition EMPI evaluation is retained as evidence for the grey-zone review workflow. The central final evaluation focuses on Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher, with Random Sampling HITL and Hybrid EMPI reported as supporting baselines.
 
-## Three Evaluation Methods
+## Central Final Evaluation Methods
 
 1. Human-only Clerical Review Baseline
-   Every blocked candidate pair is reviewed using FEBRL true links. This is a blocked-set clerical benchmark, not review of every possible real-world pair.
+   Every candidate pair is reviewed using FEBRL true links. This is a clerical benchmark, not a claim about real hospital deployment.
 
-2. AI-only EMPI Matcher
-   The matcher uses automatic decisions only. Grey-zone pairs are not corrected by a human and are excluded from positive predictions, so true links in the grey zone count as missed links.
+2. AI-only ML Matcher
+   A supervised classifier predicts match probability from field-level comparison features without active-learning review batches.
 
-3. AI + HITL Grey-Zone Review
-   The matcher resolves clear cases automatically. Grey-zone pairs are resolved using simulated ideal human review based on FEBRL true links.
+3. AI + HITL Active Learning Matcher
+   The main proposed method. The classifier selects uncertain pairs, receives simulated reviewer labels, retrains in batches, and evaluates on a frozen test set.
+
+4. Random Sampling HITL Baseline
+   Uses the same label budget as active learning but selects review pairs randomly.
+
+5. Hybrid EMPI Baseline
+   A transparent non-ML baseline and fallback based on field-level weights and disagreement penalties.
 
 ## Developer Quick Start
 
@@ -215,13 +223,14 @@ The automated EMPI matcher blends two signals:
 
 The hybrid score gives stronger weight to fields such as date of birth, surname, postcode, and address because they provide stronger identity evidence than broader or often-missing fields. Pairs above the upper threshold become Auto Match. Pairs below the lower threshold become Auto Non-match. Pairs between the thresholds enter grey-zone human review.
 
-The active-learning ML matcher is a separate extension. It trains Logistic Regression, Random Forest, and Gradient Boosting classifiers on the same field-level comparison features. The model comparison keeps the Hybrid EMPI Score as a non-ML baseline, Logistic Regression as an explainable ML baseline, and tree-based models as nonlinear tabular ML alternatives.
+The Active Learning ML Matcher trains Logistic Regression, Random Forest, and Gradient Boosting classifiers on the same field-level comparison features. The model comparison keeps the Hybrid EMPI Score as a non-ML baseline, Logistic Regression as an explainable ML baseline, and tree-based models as nonlinear tabular ML alternatives.
 
 ## Main Outputs
 
 The `outputs/reports/` files are generated technical summaries, not final academic report drafts. They document what was run, key configuration, metrics, assumptions, and limitations.
 
 - `outputs/tables/final_evaluation_comparison.csv`
+- `outputs/tables/final_research_evaluation.csv`
 - `outputs/tables/evaluation_metrics.csv`
 - `outputs/tables/threshold_sweep.csv`
 - `outputs/tables/model_comparison.csv`
@@ -250,6 +259,7 @@ The `outputs/reports/` files are generated technical summaries, not final academ
 - `outputs/figures/active_learning_curve.png`
 - `outputs/figures/random_vs_active_learning.png`
 - `outputs/figures/label_efficiency_curve.png`
+- `outputs/figures/final_research_evaluation.png`
 
 ## Limitations
 

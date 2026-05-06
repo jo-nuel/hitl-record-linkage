@@ -86,7 +86,7 @@ def _top_metric_cards() -> None:
     true_links = _load(CONFIG.paths.true_links, dtype=str)
     blocking = _load(CONFIG.paths.blocking_stats)
     active_rounds = _load(CONFIG.paths.active_learning_rounds)
-    final_eval = _load(CONFIG.paths.final_evaluation_comparison)
+    final_eval = _load(CONFIG.paths.final_research_evaluation)
 
     columns = st.columns(7)
     columns[0].metric("Dataset", "FEBRL4")
@@ -101,8 +101,8 @@ def _top_metric_cards() -> None:
     if not active_rounds.empty and "F1-score" in active_rounds.columns:
         columns[6].metric("Active-learning best F1", f"{active_rounds['F1-score'].max():.3f}")
     elif not final_eval.empty and "Method" in final_eval.columns:
-        hitl = final_eval[final_eval["Method"] == "AI + HITL Grey-Zone Review"]
-        columns[6].metric("AI + HITL F1", f"{float(hitl.iloc[0]['F1-score']):.3f}" if not hitl.empty else "n/a")
+        hitl = final_eval[final_eval["Method"] == "AI + HITL Active Learning Matcher"]
+        columns[6].metric("Active-learning F1", f"{float(hitl.iloc[0]['F1-score']):.3f}" if not hitl.empty else "n/a")
     else:
         columns[6].metric("Best F1", "n/a")
 
@@ -119,20 +119,20 @@ def _workflow_cards(items: list[str]) -> None:
 
 def _overview() -> None:
     st.header("Overview")
-    st.subheader("Active Learning EMPI-Inspired Record Linkage with HITL Review")
+    st.subheader("AI-Assisted Active Learning HITL Record Linkage using FEBRL4")
     st.write(
         "This dashboard presents a research prototype for detecting linked patient-style records. "
-        "The main system is EMPI-inspired HITL record linkage: preprocessing, blocking, field-level comparison, "
+        "The EMPI-inspired pipeline provides the healthcare-style structure: preprocessing, blocking, field-level comparison, "
         "threshold-based decision logic, and grey-zone human review. "
-        "The active-learning ML matcher extends this workflow with match probabilities, "
-        "uncertainty sampling, human review, and batch retraining."
+        "The Active Learning ML Matcher is the main proposed AI + HITL method. It predicts match probability, "
+        "selects uncertain pairs for review, stores labels, and retrains in batches."
     )
     st.info(
         "Method positioning: Hybrid EMPI Score is the transparent non-ML baseline and fallback. "
-        "Active Learning ML is the main AI extension."
+        "Active Learning ML Matcher is the main proposed method."
     )
     _section_note(
-        "Research aim: evaluate whether active-learning HITL can improve linkage quality while reducing manual review workload."
+        "Research aim: evaluate whether active-learning ML-based HITL can improve duplicate record detection by using review labels to improve the matcher while reducing unnecessary manual review."
     )
     _top_metric_cards()
     st.markdown("### Presentation Workflow")
@@ -151,7 +151,7 @@ def _overview() -> None:
     )
     st.markdown("### Important Evaluation Note")
     st.write(
-        "Formal benchmark HITL labels are simulated using FEBRL ground truth. "
+        "Formal active-learning HITL labels are simulated using FEBRL ground truth. "
         "Live review clicks demonstrate the review workflow and audit logging. "
         "A frozen test set must not be used for active-learning training."
     )
@@ -430,43 +430,26 @@ def _learning_curves() -> None:
 def _final_evaluation() -> None:
     st.header("Final Evaluation")
     st.write(
-        "The main three-condition evaluation remains the anchor comparison. Active-learning outputs are shown separately as an extension, not as a replacement for the original AI + HITL grey-zone review condition."
+        "The central final comparison presents the Active Learning ML Matcher as the main proposed AI + HITL method. "
+        "It compares the human-only workload baseline, AI-only ML matcher, AI + HITL active-learning matcher, "
+        "and the supporting random-sampling and Hybrid EMPI baselines."
     )
-    comparison = _load(CONFIG.paths.final_evaluation_comparison)
-    if comparison.empty:
-        _show_missing(CONFIG.paths.final_evaluation_comparison, "python scripts/run_pipeline.py --review-mode simulate")
+    final_research = _load(CONFIG.paths.final_research_evaluation)
+    if final_research.empty:
+        _show_missing(CONFIG.paths.final_research_evaluation, "python scripts/run_active_learning.py")
     else:
-        st.markdown("### Three-Condition Evaluation")
-        st.dataframe(comparison, use_container_width=True)
-    active = _load(CONFIG.paths.active_learning_rounds)
-    if not active.empty:
-        st.markdown("### Active-Learning Extension")
-        best = active.sort_values("F1-score", ascending=False).iloc[0]
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Method": "Active Learning ML Extension",
-                        "Precision": best["Precision"],
-                        "Recall": best["Recall"],
-                        "F1-score": best["F1-score"],
-                        "False positives": best["False positives"],
-                        "False negatives": best["False negatives"],
-                        "Candidate pairs reviewed": best["Labelled pairs"],
-                        "Review workload percentage": best["Labelled pairs"] / max(len(_load(CONFIG.paths.classified_pairs)), 1),
-                        "Key interpretation": "Classifier retrained using simulated review labels selected by uncertainty sampling.",
-                    }
-                ]
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.markdown("### Central Final Research Evaluation")
+        st.dataframe(final_research, use_container_width=True)
+    legacy = _load(CONFIG.paths.final_evaluation_comparison)
+    if not legacy.empty:
+        with st.expander("Supporting legacy three-condition EMPI evaluation"):
+            st.dataframe(legacy, use_container_width=True)
     left, right = st.columns(2)
     with left:
-        _show_image(CONFIG.paths.benchmark_figure, "Benchmark comparison.")
+        _show_image(CONFIG.paths.final_research_evaluation_figure, "Final research evaluation comparison.", "python scripts/run_active_learning.py")
     with right:
-        _show_image(CONFIG.paths.workload_figure, "Workload comparison.")
-    _show_image(CONFIG.paths.workload_percentage_figure, "Review workload percentage.")
+        _show_image(CONFIG.paths.random_vs_active_learning_figure, "Active learning vs random sampling.", "python scripts/run_active_learning.py")
+    _show_image(CONFIG.paths.benchmark_figure, "Supporting EMPI benchmark comparison.")
 
 
 def _threshold_analysis() -> None:
@@ -486,15 +469,17 @@ def _report_evidence() -> None:
     st.header("Report Evidence")
     st.write("Use these outputs as evidence for the final report and presentation. Do not copy live review ground truth into the demo.")
     evidence = [
-        CONFIG.paths.final_evaluation_comparison,
+        CONFIG.paths.final_research_evaluation,
         CONFIG.paths.model_comparison,
         CONFIG.paths.active_learning_rounds,
         CONFIG.paths.random_vs_active_learning,
-        CONFIG.paths.benchmark_figure,
-        CONFIG.paths.workload_figure,
         CONFIG.paths.model_comparison_f1_figure,
         CONFIG.paths.active_learning_curve_figure,
         CONFIG.paths.random_vs_active_learning_figure,
+        CONFIG.paths.final_research_evaluation_figure,
+        CONFIG.paths.final_evaluation_comparison,
+        CONFIG.paths.benchmark_figure,
+        CONFIG.paths.workload_figure,
         CONFIG.paths.evaluation_summary,
         CONFIG.paths.scoring_method_summary,
         CONFIG.paths.active_learning_summary,
@@ -520,7 +505,7 @@ def _sidebar() -> str:
         st.markdown("### Dataset")
         st.write("FEBRL4 benchmark data")
         st.markdown("### Workflow mode")
-        st.write("Active Learning EMPI-inspired matching")
+        st.write("Active Learning ML Matcher")
         scoring_method = st.selectbox("Scoring method", MODEL_OPTIONS)
         review_mode = st.selectbox("Review mode", ["simulate", "merge", "ignore"])
         lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
@@ -534,7 +519,7 @@ def _sidebar() -> str:
         st.caption(f"Selected scoring method for demo context: {scoring_method}")
         st.caption(f"Batch settings shown here: batch={batch_size}, rounds={rounds}, random_state={random_state}.")
         st.info(
-            "Formal benchmark HITL labels are simulated using FEBRL ground truth. Live review clicks demonstrate workflow and audit logging. Frozen test data must not be used for active-learning training."
+            "Formal active-learning HITL labels are simulated using FEBRL ground truth. Live review clicks demonstrate workflow and audit logging. Frozen test data must not be used for active-learning training."
         )
         if st.button("Run FEBRL pipeline", type="primary", use_container_width=True):
             with st.spinner("Running FEBRL EMPI pipeline..."):
@@ -569,8 +554,8 @@ def _sidebar() -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Active Learning HITL Record Linkage", layout="wide")
-    st.title("Active Learning HITL Record Linkage")
+    st.set_page_config(page_title="AI-Assisted Active Learning HITL Record Linkage", layout="wide")
+    st.title("AI-Assisted Active Learning HITL Record Linkage")
     st.caption("FEBRL4 benchmark data, EMPI-inspired evidence, uncertainty sampling, human review, and batch retraining.")
     page = _sidebar()
     pages = {

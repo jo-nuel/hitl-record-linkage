@@ -202,7 +202,7 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
     """Write concise technical summaries used as evidence, not a full report draft."""
     ensure_directories_exist(CONFIG.paths.reports_dir)
     CONFIG.paths.methodology_summary.write_text(
-        "# Methodology Summary\n\nThe workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares fields with Jaro-Winkler and exact agreement, combines ECM probability with a Hybrid EMPI-style evidence score, and sends grey-zone pairs to human review.\n",
+        "# Methodology Summary\n\nThe final method is AI-Assisted Active Learning HITL Record Linkage using FEBRL4. The workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares fields with Jaro-Winkler and exact agreement, trains ML classifiers on field-level evidence, selects uncertain pairs for simulated professional review, and retrains the classifier in batches. The Hybrid EMPI-style score is retained as a transparent non-ML baseline and fallback.\n",
         encoding="utf-8",
     )
     CONFIG.paths.blocking_summary.write_text(
@@ -218,7 +218,8 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
     )
     CONFIG.paths.evaluation_summary.write_text(
         "# Evaluation Summary\n\n"
-        "The final comparison uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.\n\n"
+        "The central final evaluation for the project is written by the active-learning experiment to `outputs/tables/final_research_evaluation.csv`. It compares Human-only Clerical Review Baseline, AI-only ML Matcher, AI + HITL Active Learning Matcher, Random Sampling HITL Baseline, and Hybrid EMPI Baseline.\n\n"
+        "The table below is supporting evidence for the operational EMPI grey-zone workflow. It uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.\n\n"
         "AI-only treats grey-zone pairs as unresolved non-positive predictions, so true links in the grey zone count as missed links.\n\n"
         "Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode.\n\n"
         "```\n"
@@ -229,7 +230,9 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
     weight_lines = "\n".join(f"- {field}: {weight:.2f}" for field, weight in FIELD_WEIGHTS.items())
     CONFIG.paths.scoring_method_summary.write_text(
         "# Scoring Method Summary\n\n"
-        "The matcher uses a blended EMPI-inspired score. It first attempts to estimate pair-level probability with `recordlinkage.ECMClassifier`. It also calculates a transparent Hybrid EMPI-style evidence score from field-level agreement values. The final model score blends ECM probability with the hybrid score using the configured ECM weight.\n\n"
+        "The final proposed AI component is the Active Learning ML Matcher. It trains lightweight supervised classifiers on field-level comparison features and uses uncertainty sampling to select ambiguous pairs for simulated professional review and batch retraining.\n\n"
+        "The Hybrid EMPI-style score is retained as a transparent non-ML baseline and fallback. It combines field-level agreement values with manually specified weights and disagreement penalties. It is useful for explainability and comparison, but it is not the main AI method.\n\n"
+        "The operational EMPI matcher also estimates pair-level probability with `recordlinkage.ECMClassifier` where available and blends that probability with the Hybrid EMPI-style evidence score for the supporting grey-zone review pipeline.\n\n"
         "## Field Weights\n\n"
         f"{weight_lines}\n\n"
         "Date of birth, surname, postcode, and address receive stronger weight because they provide stronger identity evidence than broad or sometimes missing fields. The hybrid score also applies penalties for strong disagreement in date of birth, surname, postcode, and sex/gender where those fields are available.\n\n"

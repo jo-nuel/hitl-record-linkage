@@ -214,12 +214,124 @@ def _bar_chart(df: pd.DataFrame, path: Path) -> None:
     plt.close()
 
 
-def _write_summary(rounds: pd.DataFrame, comparison: pd.DataFrame) -> None:
+def _final_research_evaluation(
+    comparison: pd.DataFrame,
+    active_rounds: pd.DataFrame,
+    random_rounds: pd.DataFrame,
+    candidate_count: int,
+) -> pd.DataFrame:
+    """Build the central final comparison for the active-learning research claim."""
+    hybrid = comparison[comparison["Method"] == "Hybrid EMPI Score"].iloc[0]
+    ml = comparison[comparison["Method"] != "Hybrid EMPI Score"].sort_values("F1-score", ascending=False).iloc[0]
+    active = active_rounds.sort_values("F1-score", ascending=False).iloc[0]
+    random = random_rounds.sort_values("F1-score", ascending=False).iloc[0]
+
+    rows = [
+        {
+            "Method": "Human-only Clerical Review Baseline",
+            "Role": "Primary baseline",
+            "Precision": 1.0,
+            "Recall": 1.0,
+            "F1-score": 1.0,
+            "False positives": 0,
+            "False negatives": 0,
+            "Candidate pairs reviewed": candidate_count,
+            "Review workload percentage": 100.0,
+            "Estimated review time": f"{candidate_count * CONFIG.matcher.manual_review_seconds_per_pair:,.0f} seconds",
+            "Training labels used": candidate_count,
+            "Evaluation scope": "Ideal clerical review over candidate pairs",
+            "Key interpretation": "Highest review burden because every candidate pair is manually resolved.",
+        },
+        {
+            "Method": "AI-only ML Matcher",
+            "Role": "Primary AI-only comparison",
+            "Precision": ml["Precision"],
+            "Recall": ml["Recall"],
+            "F1-score": ml["F1-score"],
+            "False positives": int(ml["False positives"]),
+            "False negatives": int(ml["False negatives"]),
+            "Candidate pairs reviewed": 0,
+            "Review workload percentage": 0.0,
+            "Estimated review time": "0 seconds",
+            "Training labels used": CONFIG.active_learning.seed_positive_labels + CONFIG.active_learning.seed_negative_labels,
+            "Evaluation scope": "Frozen active-learning test set",
+            "Key interpretation": "Best seed-trained ML classifier without further active-learning review batches.",
+        },
+        {
+            "Method": "AI + HITL Active Learning Matcher",
+            "Role": "Primary proposed method",
+            "Precision": active["Precision"],
+            "Recall": active["Recall"],
+            "F1-score": active["F1-score"],
+            "False positives": int(active["False positives"]),
+            "False negatives": int(active["False negatives"]),
+            "Candidate pairs reviewed": int(active["Labelled pairs"]),
+            "Review workload percentage": float(active["Labelled pairs"]) / candidate_count * 100,
+            "Estimated review time": f"{float(active['Labelled pairs']) * CONFIG.matcher.manual_review_seconds_per_pair:,.0f} seconds",
+            "Training labels used": int(active["Labelled pairs"]),
+            "Evaluation scope": "Frozen active-learning test set",
+            "Key interpretation": "Main proposed method: uncertain reviewed labels are added in batches and the classifier retrains.",
+        },
+        {
+            "Method": "Random Sampling HITL Baseline",
+            "Role": "Supporting baseline",
+            "Precision": random["Precision"],
+            "Recall": random["Recall"],
+            "F1-score": random["F1-score"],
+            "False positives": int(random["False positives"]),
+            "False negatives": int(random["False negatives"]),
+            "Candidate pairs reviewed": int(random["Labelled pairs"]),
+            "Review workload percentage": float(random["Labelled pairs"]) / candidate_count * 100,
+            "Estimated review time": f"{float(random['Labelled pairs']) * CONFIG.matcher.manual_review_seconds_per_pair:,.0f} seconds",
+            "Training labels used": int(random["Labelled pairs"]),
+            "Evaluation scope": "Frozen active-learning test set",
+            "Key interpretation": "Same label budget as active learning, but review pairs are selected randomly.",
+        },
+        {
+            "Method": "Hybrid EMPI Baseline",
+            "Role": "Supporting transparent baseline",
+            "Precision": hybrid["Precision"],
+            "Recall": hybrid["Recall"],
+            "F1-score": hybrid["F1-score"],
+            "False positives": int(hybrid["False positives"]),
+            "False negatives": int(hybrid["False negatives"]),
+            "Candidate pairs reviewed": 0,
+            "Review workload percentage": 0.0,
+            "Estimated review time": "0 seconds",
+            "Training labels used": 0,
+            "Evaluation scope": "Frozen active-learning test set",
+            "Key interpretation": "Transparent non-ML baseline and fallback using field weights and penalties.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _final_research_chart(df: pd.DataFrame, path: Path) -> None:
+    plt.figure(figsize=(9, 5))
+    x = np.arange(len(df))
+    plt.bar(x - 0.25, df["F1-score"], width=0.25, label="F1-score", color="#355C7D")
+    plt.bar(x, df["Recall"], width=0.25, label="Recall", color="#6C9A8B")
+    workload_scaled = df["Review workload percentage"] / 100
+    plt.bar(x + 0.25, workload_scaled, width=0.25, label="Workload share", color="#C06C84")
+    plt.xticks(x, df["Method"], rotation=25, ha="right")
+    plt.ylim(0, 1.05)
+    plt.ylabel("Score or workload share")
+    plt.title("Final research evaluation comparison")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(path, dpi=160)
+    plt.close()
+
+
+def _write_summary(rounds: pd.DataFrame, comparison: pd.DataFrame, final_evaluation: pd.DataFrame) -> None:
     best = rounds.sort_values("F1-score", ascending=False).iloc[0]
     best_model = comparison.sort_values("F1-score", ascending=False).iloc[0]
+    central = final_evaluation[final_evaluation["Method"] == "AI + HITL Active Learning Matcher"].iloc[0]
     text = f"""# Active Learning Summary
 
-Formal active-learning experiments use FEBRL ground truth to simulate reviewer labels. This keeps the benchmark reproducible and avoids mixing live Streamlit clicks with the frozen evaluation set.
+The Active Learning ML Matcher is the main proposed AI + HITL method. It learns from field-level comparison features, selects uncertain pairs for review, receives simulated reviewer labels from FEBRL ground truth for reproducible benchmarking, and retrains in batches.
+
+Formal active-learning experiments use FEBRL ground truth to simulate reviewer labels. This keeps the benchmark reproducible and avoids mixing live Streamlit clicks with the frozen evaluation set. Live clicks remain useful for demonstration, audit logging, and possible future training-label collection.
 
 ## Configuration
 
@@ -239,6 +351,15 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 - Recall: {best['Recall']:.3f}
 - F1-score: {best['F1-score']:.3f}
 
+## Final Research Comparison
+
+- Main proposed method: AI + HITL Active Learning Matcher
+- Precision: {central['Precision']:.3f}
+- Recall: {central['Recall']:.3f}
+- F1-score: {central['F1-score']:.3f}
+- Candidate pairs reviewed: {int(central['Candidate pairs reviewed'])}
+- Review workload percentage: {central['Review workload percentage']:.3f}%
+
 ## Best Model Comparison Result
 
 - Method: {best_model['Method']}
@@ -248,9 +369,11 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 
 ## Interpretation
 
-Active learning selects uncertain pairs near the classifier decision boundary for review. In this prototype, FEBRL labels simulate reviewer feedback so the experiment can be rerun consistently. Live review decisions remain useful for demonstrating audit logging and future training-label collection, but they are not used as the default benchmark labels.
+The EMPI-inspired pipeline provides the healthcare-style record linkage structure: preprocessing, blocking, field-level comparison, threshold decisions, and human review.
 
-The Hybrid EMPI Score is kept as a transparent non-ML baseline and fallback scoring method. The active-learning ML matcher is the main AI extension because it learns from field-level comparison features and simulated reviewer labels, then retrains in batches.
+The Hybrid EMPI Score is retained as a transparent non-ML baseline and fallback scoring method. It is not presented as the main AI model.
+
+The Active Learning ML Matcher is the main proposed method because it uses reviewer labels to improve future predictions over training rounds. Random Sampling HITL is included as a baseline to show whether uncertainty sampling is more label-efficient than reviewing randomly selected pairs.
 """
     CONFIG.paths.active_learning_summary.write_text(text, encoding="utf-8")
 
@@ -315,10 +438,12 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "Random Sampling",
     )
     random_vs_active = pd.concat([active_rounds, random_rounds], ignore_index=True)
+    final_research = _final_research_evaluation(comparison, active_rounds, random_rounds, len(pairs))
 
     save_csv(comparison, CONFIG.paths.model_comparison)
     save_csv(active_rounds, CONFIG.paths.active_learning_rounds)
     save_csv(random_vs_active, CONFIG.paths.random_vs_active_learning)
+    save_csv(final_research, CONFIG.paths.final_research_evaluation)
     _bar_chart(comparison, CONFIG.paths.model_comparison_f1_figure)
     _line_chart(active_rounds, CONFIG.paths.active_learning_curve_figure, "Active learning F1 over review rounds", "F1-score")
     _line_chart(
@@ -333,9 +458,11 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "Recall gained per labelled-pair budget",
         "Recall",
     )
-    _write_summary(active_rounds, comparison)
+    _final_research_chart(final_research, CONFIG.paths.final_research_evaluation_figure)
+    _write_summary(active_rounds, comparison, final_research)
     return {
         "model_comparison": comparison,
         "active_learning_rounds": active_rounds,
         "random_vs_active_learning": random_vs_active,
+        "final_research_evaluation": final_research,
     }

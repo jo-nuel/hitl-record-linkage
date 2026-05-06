@@ -1,6 +1,10 @@
 # Scoring Method Summary
 
-The matcher uses a blended EMPI-inspired score. It first attempts to estimate pair-level probability with `recordlinkage.ECMClassifier`. It also calculates a transparent Hybrid EMPI-style evidence score from field-level agreement values. The final model score blends ECM probability with the hybrid score using the configured ECM weight.
+The final proposed AI component is the Active Learning ML Matcher. It trains lightweight supervised classifiers on field-level comparison features and uses uncertainty sampling to select ambiguous pairs for simulated professional review and batch retraining.
+
+The Hybrid EMPI-style score is retained as a transparent non-ML baseline and fallback. It combines field-level agreement values with manually specified weights and disagreement penalties. It is useful for explainability and comparison, but it is not the main AI method.
+
+The operational EMPI matcher also estimates pair-level probability with `recordlinkage.ECMClassifier` where available and blends that probability with the Hybrid EMPI-style evidence score for the supporting grey-zone review pipeline.
 
 ## Field Weights
 

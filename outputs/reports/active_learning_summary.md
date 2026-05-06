@@ -1,6 +1,8 @@
 # Active Learning Summary
 
-Formal active-learning experiments use FEBRL ground truth to simulate reviewer labels. This keeps the benchmark reproducible and avoids mixing live Streamlit clicks with the frozen evaluation set.
+The Active Learning ML Matcher is the main proposed AI + HITL method. It learns from field-level comparison features, selects uncertain pairs for review, receives simulated reviewer labels from FEBRL ground truth for reproducible benchmarking, and retrains in batches.
+
+Formal active-learning experiments use FEBRL ground truth to simulate reviewer labels. This keeps the benchmark reproducible and avoids mixing live Streamlit clicks with the frozen evaluation set. Live clicks remain useful for demonstration, audit logging, and possible future training-label collection.
 
 ## Configuration
 
@@ -20,6 +22,15 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 - Recall: 0.999
 - F1-score: 1.000
 
+## Final Research Comparison
+
+- Main proposed method: AI + HITL Active Learning Matcher
+- Precision: 1.000
+- Recall: 0.999
+- F1-score: 1.000
+- Candidate pairs reviewed: 700
+- Review workload percentage: 0.464%
+
 ## Best Model Comparison Result
 
 - Method: Hybrid EMPI Score
@@ -29,6 +40,8 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 
 ## Interpretation
 
-Active learning selects uncertain pairs near the classifier decision boundary for review. In this prototype, FEBRL labels simulate reviewer feedback so the experiment can be rerun consistently. Live review decisions remain useful for demonstrating audit logging and future training-label collection, but they are not used as the default benchmark labels.
+The EMPI-inspired pipeline provides the healthcare-style record linkage structure: preprocessing, blocking, field-level comparison, threshold decisions, and human review.
 
-The Hybrid EMPI Score is kept as a transparent non-ML baseline and fallback scoring method. The active-learning ML matcher is the main AI extension because it learns from field-level comparison features and simulated reviewer labels, then retrains in batches.
+The Hybrid EMPI Score is retained as a transparent non-ML baseline and fallback scoring method. It is not presented as the main AI model.
+
+The Active Learning ML Matcher is the main proposed method because it uses reviewer labels to improve future predictions over training rounds. Random Sampling HITL is included as a baseline to show whether uncertainty sampling is more label-efficient than reviewing randomly selected pairs.

@@ -24,6 +24,7 @@ class PathConfig:
     final_decisions: Path = tables_dir / "final_decisions.csv"
     evaluation_metrics: Path = tables_dir / "evaluation_metrics.csv"
     final_evaluation_comparison: Path = tables_dir / "final_evaluation_comparison.csv"
+    final_research_evaluation: Path = tables_dir / "final_research_evaluation.csv"
     blocking_stats: Path = tables_dir / "blocking_stats.csv"
     benchmark_table: Path = tables_dir / "benchmark_comparison_table.csv"
     workload_table: Path = tables_dir / "workload_summary_table.csv"
@@ -56,6 +57,7 @@ class PathConfig:
     active_learning_curve_figure: Path = figures_dir / "active_learning_curve.png"
     random_vs_active_learning_figure: Path = figures_dir / "random_vs_active_learning.png"
     label_efficiency_curve_figure: Path = figures_dir / "label_efficiency_curve.png"
+    final_research_evaluation_figure: Path = figures_dir / "final_research_evaluation.png"
 
 
 @dataclass

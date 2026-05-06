@@ -1,6 +1,8 @@
 # Evaluation Summary
 
-The final comparison uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.
+The central final evaluation for the project is written by the active-learning experiment to `outputs/tables/final_research_evaluation.csv`. It compares Human-only Clerical Review Baseline, AI-only ML Matcher, AI + HITL Active Learning Matcher, Random Sampling HITL Baseline, and Hybrid EMPI Baseline.
+
+The table below is supporting evidence for the operational EMPI grey-zone workflow. It uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.
 
 AI-only treats grey-zone pairs as unresolved non-positive predictions, so true links in the grey zone count as missed links.
 
