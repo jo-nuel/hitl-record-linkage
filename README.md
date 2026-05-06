@@ -4,9 +4,11 @@ University research prototype for:
 
 **AI-Assisted Human-in-the-Loop Record Linkage for Detecting Duplicate Patient Records in Healthcare Datasets**
 
-The prototype demonstrates an EMPI-inspired linkage workflow using FEBRL benchmark data. The system automatically resolves clear record pairs and escalates grey-zone pairs for human review.
+The prototype demonstrates an EMPI-inspired HITL record linkage workflow using FEBRL benchmark data. The system automatically resolves clear record pairs and escalates grey-zone pairs for human review.
 
-The Streamlit dashboard also presents an active-learning extension. In this workflow, a classifier learns from field-level comparison features, selects uncertain pairs for review, retrains in batches, and is evaluated on a frozen test set.
+The Streamlit dashboard also presents an active-learning ML extension. In this workflow, a classifier learns from field-level comparison features, selects uncertain pairs for review, retrains in batches, and is evaluated on a frozen test set.
+
+Final academic report drafts are kept outside the repository. This repository contains the technical artefact, reproducibility documentation, and generated evidence outputs used to support the final report.
 
 ## Research Question
 
@@ -26,17 +28,26 @@ No raw dataset download is required. FEBRL4 is loaded through the `recordlinkage
 
 An EMPI-inspired AI + HITL workflow can improve the accuracy-efficiency trade-off in duplicate patient record linkage by automatically resolving clear cases and escalating uncertain cases for human review.
 
-## Active Learning EMPI-Inspired Workflow
+## EMPI-Inspired HITL Workflow
 
 1. Load FEBRL4.
 2. Preprocess identity fields.
 3. Generate candidate pairs with multi-pass blocking.
 4. Compare field-level evidence.
-5. Score pairs with ECM probability, a Hybrid EMPI-style evidence score, or supervised ML classifiers.
-6. Use uncertainty sampling to select informative grey-zone pairs for review.
-7. Store reviewer labels in an audit log.
-8. Retrain classifiers in batches during the active-learning experiment.
-9. Evaluate workload and accuracy.
+5. Score pairs with ECM probability and the Hybrid EMPI-style evidence score.
+6. Classify pairs as Auto Match, Auto Non-match, or Needs Human Review.
+7. Store reviewer decisions in an audit log.
+8. Evaluate workload and accuracy.
+
+## Method Positioning
+
+The main system is **EMPI-inspired HITL record linkage**. It provides the healthcare-style workflow: preprocessing, blocking, field-level comparison, threshold-based decision logic, and grey-zone human review.
+
+The **Hybrid EMPI-style score** is kept as a transparent non-ML baseline, fallback scoring method, and explainability layer. It is based on field-level weights and disagreement penalties.
+
+The **Active Learning ML matcher** is the main AI extension. It learns from field-level comparison features, predicts match probability, selects uncertain pairs for review, simulates reviewer labels with FEBRL ground truth for reproducible experiments, and retrains in batches.
+
+The main three-condition evaluation remains separate from the active-learning extension. The three-condition evaluation compares Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review. The active-learning experiment tests whether reviewer labels can improve an ML classifier over training rounds.
 
 ## Three Evaluation Methods
 
@@ -195,16 +206,20 @@ Dashboard pages:
 - **FEBRL dataset not found:** Reinstall requirements. FEBRL is provided by the `recordlinkage` package and does not require a separate dataset download.
 - **Outputs are missing:** Run `python scripts/run_pipeline.py --review-mode simulate` before opening the dashboard or validating outputs.
 
-## Scoring Method
+## Scoring And Learning Methods
 
-The matcher blends two signals:
+The automated EMPI matcher blends two signals:
 
 - `recordlinkage.ECMClassifier` probability where available.
 - A Hybrid EMPI-style evidence score based on field-level agreement.
 
 The hybrid score gives stronger weight to fields such as date of birth, surname, postcode, and address because they provide stronger identity evidence than broader or often-missing fields. Pairs above the upper threshold become Auto Match. Pairs below the lower threshold become Auto Non-match. Pairs between the thresholds enter grey-zone human review.
 
+The active-learning ML matcher is a separate extension. It trains Logistic Regression, Random Forest, and Gradient Boosting classifiers on the same field-level comparison features. The model comparison keeps the Hybrid EMPI Score as a non-ML baseline, Logistic Regression as an explainable ML baseline, and tree-based models as nonlinear tabular ML alternatives.
+
 ## Main Outputs
+
+The `outputs/reports/` files are generated technical summaries, not final academic report drafts. They document what was run, key configuration, metrics, assumptions, and limitations.
 
 - `outputs/tables/final_evaluation_comparison.csv`
 - `outputs/tables/evaluation_metrics.csv`

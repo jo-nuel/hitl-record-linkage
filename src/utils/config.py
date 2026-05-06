@@ -80,7 +80,7 @@ class MatcherConfig:
 @dataclass
 class ActiveLearningConfig:
     seed_positive_labels: int = 50
-    seed_negative_labels: int = 150
+    seed_negative_labels: int = 50
     batch_size: int = 150
     rounds: int = 8
     test_size: float = 0.25

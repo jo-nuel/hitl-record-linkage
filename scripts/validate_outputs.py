@@ -98,7 +98,19 @@ def _validate_active_learning_outputs() -> list[str]:
     expected_models = {"Hybrid EMPI Score", "Logistic Regression", "Random Forest", "Gradient Boosting"}
     if set(model_comparison.get("Method", [])) != expected_models:
         failures.append("model_comparison.csv must contain Hybrid EMPI Score, Logistic Regression, Random Forest, and Gradient Boosting")
-    required_round_columns = {"Round", "Strategy", "Classifier", "Labelled pairs", "Precision", "Recall", "F1-score"}
+    required_round_columns = {
+        "Round",
+        "Strategy",
+        "Classifier",
+        "Labelled pairs",
+        "New labels added",
+        "Unlabelled pairs remaining",
+        "Precision",
+        "Recall",
+        "F1-score",
+        "False positives",
+        "False negatives",
+    }
     missing_round_columns = required_round_columns - set(rounds.columns)
     if missing_round_columns:
         failures.append(f"active_learning_rounds.csv missing columns: {sorted(missing_round_columns)}")
@@ -108,6 +120,13 @@ def _validate_active_learning_outputs() -> list[str]:
         failures.append("random_vs_active_learning.csv must include Active Learning rows")
     if "Random Sampling" not in set(random_vs_active.get("Strategy", [])):
         failures.append("random_vs_active_learning.csv must include Random Sampling rows")
+    for strategy_name, group in random_vs_active.groupby("Strategy"):
+        labelled_counts = group.sort_values("Round")["Labelled pairs"].astype(int).to_list()
+        if labelled_counts != sorted(labelled_counts):
+            failures.append(f"{strategy_name} labelled pair counts must increase monotonically across rounds")
+    first_round = rounds.sort_values("Round").iloc[0]
+    if int(first_round["Round"]) != 0 or int(first_round["New labels added"]) != 0:
+        failures.append("Round 0 must be the seed-only model with New labels added = 0")
     if not failures:
         _pass("active-learning model comparison and learning-curve outputs are present")
     return failures

@@ -11,3 +11,13 @@ outputs/figures/review_workload.png
 
 .streamlit/secrets.toml
 .ipynb_checkpoints/
+
+# Local assignment/report-writing drafts are kept outside GitHub.
+docs/final_report/
+docs/report_drafts/
+docs/assignment_writing/
+docs/reflection_journals/
+docs/archive/
+*.docx
+*.pdf
+~$*.docx

@@ -148,6 +148,24 @@ def _active_learning_loop(
     model = _models(random_state)[model_name]
 
     for round_number in range(rounds + 1):
+        new_labels_added = 0
+        if round_number > 0 and unlabelled:
+            # Select a batch using the previous labelled set, simulate reviewer
+            # labels with FEBRL truth, then retrain before evaluating this round.
+            model.fit(x_pool.loc[labelled], y_pool.loc[labelled])
+            if strategy == "Active Learning":
+                pool_probabilities = _predict_probability(model, x_pool.loc[unlabelled])
+                uncertainty = np.abs(pool_probabilities - 0.5)
+                selected_positions = np.argsort(uncertainty)[:batch_size]
+                selected = [unlabelled[position] for position in selected_positions]
+            else:
+                selected = list(rng.choice(unlabelled, size=min(batch_size, len(unlabelled)), replace=False))
+
+            selected_set = set(selected)
+            labelled.extend(selected)
+            unlabelled = [idx for idx in unlabelled if idx not in selected_set]
+            new_labels_added = len(selected)
+
         model.fit(x_pool.loc[labelled], y_pool.loc[labelled])
         probabilities = _predict_probability(model, x_test)
         row = _metrics(y_test, probabilities)
@@ -157,26 +175,14 @@ def _active_learning_loop(
                 "Strategy": strategy,
                 "Classifier": model_name,
                 "Labelled pairs": len(labelled),
-                "New labels this round": 0 if round_number == 0 else min(batch_size, len(unlabelled)),
+                "New labels added": new_labels_added,
                 "Unlabelled pairs remaining": len(unlabelled),
             }
         )
         rows.append(row)
 
-        if round_number == rounds or not unlabelled:
+        if round_number == rounds:
             break
-
-        if strategy == "Active Learning":
-            pool_probabilities = _predict_probability(model, x_pool.loc[unlabelled])
-            uncertainty = np.abs(pool_probabilities - 0.5)
-            selected_positions = np.argsort(uncertainty)[:batch_size]
-            selected = [unlabelled[position] for position in selected_positions]
-        else:
-            selected = list(rng.choice(unlabelled, size=min(batch_size, len(unlabelled)), replace=False))
-
-        selected_set = set(selected)
-        labelled.extend(selected)
-        unlabelled = [idx for idx in unlabelled if idx not in selected_set]
 
     return pd.DataFrame(rows)
 
@@ -243,6 +249,8 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 ## Interpretation
 
 Active learning selects uncertain pairs near the classifier decision boundary for review. In this prototype, FEBRL labels simulate reviewer feedback so the experiment can be rerun consistently. Live review decisions remain useful for demonstrating audit logging and future training-label collection, but they are not used as the default benchmark labels.
+
+The Hybrid EMPI Score is kept as a transparent non-ML baseline and fallback scoring method. The active-learning ML matcher is the main AI extension because it learns from field-level comparison features and simulated reviewer labels, then retrains in batches.
 """
     CONFIG.paths.active_learning_summary.write_text(text, encoding="utf-8")
 

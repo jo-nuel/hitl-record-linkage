@@ -122,8 +122,14 @@ def _overview() -> None:
     st.subheader("Active Learning EMPI-Inspired Record Linkage with HITL Review")
     st.write(
         "This dashboard presents a research prototype for detecting linked patient-style records. "
-        "The project uses FEBRL4 benchmark data, EMPI-inspired field evidence, machine-learning match probabilities, "
+        "The main system is EMPI-inspired HITL record linkage: preprocessing, blocking, field-level comparison, "
+        "threshold-based decision logic, and grey-zone human review. "
+        "The active-learning ML matcher extends this workflow with match probabilities, "
         "uncertainty sampling, human review, and batch retraining."
+    )
+    st.info(
+        "Method positioning: Hybrid EMPI Score is the transparent non-ML baseline and fallback. "
+        "Active Learning ML is the main AI extension."
     )
     _section_note(
         "Research aim: evaluate whether active-learning HITL can improve linkage quality while reducing manual review workload."
@@ -265,6 +271,10 @@ def _active_learning_workflow() -> None:
         "Active learning focuses reviewer effort on uncertain pairs near the classifier decision boundary. "
         "After each review batch, the new labels are added to the training set and the classifier is retrained."
     )
+    st.info(
+        "Round 0 is the seed-only model. From Round 1 onward, the app reports labels added before retraining and evaluation. "
+        "The frozen test set is only used for evaluation."
+    )
     _workflow_cards(
         [
             "Initial labelled seed",
@@ -381,7 +391,8 @@ def _human_review_queue() -> None:
 def _model_performance() -> None:
     st.header("Model Performance")
     st.write(
-        "This page compares the transparent Hybrid EMPI Score with supervised classifiers trained on field-level evidence features."
+        "This page compares the transparent Hybrid EMPI Score baseline with supervised classifiers trained on field-level evidence features. "
+        "Logistic Regression is the explainable ML baseline. Random Forest and Gradient Boosting test whether nonlinear tabular models improve linkage performance."
     )
     comparison = _load(CONFIG.paths.model_comparison)
     if comparison.empty:
@@ -419,7 +430,7 @@ def _learning_curves() -> None:
 def _final_evaluation() -> None:
     st.header("Final Evaluation")
     st.write(
-        "The existing final evaluation remains the anchor comparison. Active-learning outputs extend this evidence rather than replacing it."
+        "The main three-condition evaluation remains the anchor comparison. Active-learning outputs are shown separately as an extension, not as a replacement for the original AI + HITL grey-zone review condition."
     )
     comparison = _load(CONFIG.paths.final_evaluation_comparison)
     if comparison.empty:
@@ -435,7 +446,7 @@ def _final_evaluation() -> None:
             pd.DataFrame(
                 [
                     {
-                        "Method": "AI + HITL Active Learning",
+                        "Method": "Active Learning ML Extension",
                         "Precision": best["Precision"],
                         "Recall": best["Recall"],
                         "F1-score": best["F1-score"],
