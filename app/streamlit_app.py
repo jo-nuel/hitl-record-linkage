@@ -128,8 +128,8 @@ def _overview() -> None:
         "selects uncertain pairs for review, stores labels, and retrains in batches."
     )
     st.info(
-        "Method positioning: Hybrid EMPI Score is the transparent non-ML baseline and fallback. "
-        "Active Learning ML Matcher is the main proposed method."
+        "Method positioning: Active Learning ML Matcher is the main proposed method. "
+        "Hybrid EMPI Score is kept only as a transparent fallback and explainability layer."
     )
     _section_note(
         "Research aim: evaluate whether active-learning ML-based HITL can improve duplicate record detection by using review labels to improve the matcher while reducing unnecessary manual review."
@@ -273,7 +273,7 @@ def _active_learning_workflow() -> None:
     )
     st.info(
         "Round 0 is the seed-only model. From Round 1 onward, the app reports labels added before retraining and evaluation. "
-        "The frozen test set is only used for evaluation."
+        "Classifier hyperparameters are tuned on seed labels only. The frozen test set is only used for evaluation."
     )
     _workflow_cards(
         [
@@ -391,17 +391,31 @@ def _human_review_queue() -> None:
 def _model_performance() -> None:
     st.header("Model Performance")
     st.write(
-        "This page compares the transparent Hybrid EMPI Score baseline with supervised classifiers trained on field-level evidence features. "
-        "Logistic Regression is the explainable ML baseline. Random Forest and Gradient Boosting test whether nonlinear tabular models improve linkage performance."
+        "This page shows how the selected ML matcher is tuned and checked before active-learning evaluation. "
+        "Logistic Regression is the explainable ML baseline. Random Forest and Gradient Boosting test whether nonlinear tabular models improve linkage performance. "
+        "Hybrid EMPI may appear in the internal comparison table as a transparent scoring reference, not as a final evaluation method."
     )
+    tuning = _load(CONFIG.paths.hyperparameter_tuning)
+    if tuning.empty:
+        _show_missing(CONFIG.paths.hyperparameter_tuning, "python scripts/run_active_learning.py")
+    else:
+        st.markdown("### Hyperparameter Tuning")
+        st.dataframe(tuning, use_container_width=True)
+        best_tuned = tuning.sort_values("Best CV F1-score", ascending=False).iloc[0]
+        st.info(
+            f"Selected active-learning classifier: {best_tuned['Method']} "
+            f"(best CV F1-score {float(best_tuned['Best CV F1-score']):.3f})."
+        )
     comparison = _load(CONFIG.paths.model_comparison)
     if comparison.empty:
         _show_missing(CONFIG.paths.model_comparison, "python scripts/run_active_learning.py")
     else:
+        st.markdown("### Frozen Test-Set Model Comparison")
         st.dataframe(comparison, use_container_width=True)
-        best = comparison.sort_values("F1-score", ascending=False).iloc[0]
+        ml_only = comparison[comparison["Method"] != "Hybrid EMPI Score"]
+        best = ml_only.sort_values("F1-score", ascending=False).iloc[0] if not ml_only.empty else comparison.iloc[0]
         c1, c2, c3 = st.columns(3)
-        c1.metric("Best method", best["Method"])
+        c1.metric("Best test-set ML", best["Method"])
         c2.metric("Best F1", f"{float(best['F1-score']):.3f}")
         c3.metric("Best recall", f"{float(best['Recall']):.3f}")
     _show_image(CONFIG.paths.model_comparison_f1_figure, "Model comparison by F1-score.", "python scripts/run_active_learning.py")
@@ -410,7 +424,7 @@ def _model_performance() -> None:
 def _learning_curves() -> None:
     st.header("Learning Curves")
     st.write(
-        "Learning curves show whether active learning reaches strong performance with fewer labelled examples than random sampling."
+        "Learning curves show whether the proposed AI + HITL matcher improves as simulated professional review labels are added in batches."
     )
     active_rounds = _load(CONFIG.paths.active_learning_rounds)
     random_vs_active = _load(CONFIG.paths.random_vs_active_learning)
@@ -419,20 +433,26 @@ def _learning_curves() -> None:
     else:
         st.markdown("### Active-Learning Rounds")
         st.dataframe(active_rounds, use_container_width=True)
-    if not random_vs_active.empty:
-        st.markdown("### Random Sampling vs Active Learning")
-        st.dataframe(random_vs_active, use_container_width=True)
     _show_image(CONFIG.paths.active_learning_curve_figure, "Active-learning curve.", "python scripts/run_active_learning.py")
-    _show_image(CONFIG.paths.random_vs_active_learning_figure, "Random sampling vs active learning.", "python scripts/run_active_learning.py")
     _show_image(CONFIG.paths.label_efficiency_curve_figure, "Label efficiency curve.", "python scripts/run_active_learning.py")
+    if not random_vs_active.empty:
+        with st.expander("Internal exploratory comparison: random sampling"):
+            st.write(
+                "This table is kept for development checking only. It is not part of the final report-facing evaluation."
+            )
+            st.dataframe(random_vs_active, use_container_width=True)
+            _show_image(
+                CONFIG.paths.random_vs_active_learning_figure,
+                "Internal exploratory comparison: active learning vs random sampling.",
+                "python scripts/run_active_learning.py",
+            )
 
 
 def _final_evaluation() -> None:
     st.header("Final Evaluation")
     st.write(
-        "The central final comparison presents the Active Learning ML Matcher as the main proposed AI + HITL method. "
-        "It compares the human-only workload baseline, AI-only ML matcher, AI + HITL active-learning matcher, "
-        "and the supporting random-sampling and Hybrid EMPI baselines."
+        "The final report-facing comparison contains only three methods: Human-only Clerical Review Baseline, "
+        "AI-only ML Matcher, and AI + HITL Active Learning Matcher."
     )
     final_research = _load(CONFIG.paths.final_research_evaluation)
     if final_research.empty:
@@ -440,16 +460,11 @@ def _final_evaluation() -> None:
     else:
         st.markdown("### Central Final Research Evaluation")
         st.dataframe(final_research, use_container_width=True)
-    legacy = _load(CONFIG.paths.final_evaluation_comparison)
-    if not legacy.empty:
-        with st.expander("Supporting legacy three-condition EMPI evaluation"):
-            st.dataframe(legacy, use_container_width=True)
     left, right = st.columns(2)
     with left:
         _show_image(CONFIG.paths.final_research_evaluation_figure, "Final research evaluation comparison.", "python scripts/run_active_learning.py")
     with right:
-        _show_image(CONFIG.paths.random_vs_active_learning_figure, "Active learning vs random sampling.", "python scripts/run_active_learning.py")
-    _show_image(CONFIG.paths.benchmark_figure, "Supporting EMPI benchmark comparison.")
+        _show_image(CONFIG.paths.active_learning_curve_figure, "Active-learning improvement over review batches.", "python scripts/run_active_learning.py")
 
 
 def _threshold_analysis() -> None:
@@ -470,19 +485,16 @@ def _report_evidence() -> None:
     st.write("Use these outputs as evidence for the final report and presentation. Do not copy live review ground truth into the demo.")
     evidence = [
         CONFIG.paths.final_research_evaluation,
-        CONFIG.paths.model_comparison,
         CONFIG.paths.active_learning_rounds,
-        CONFIG.paths.random_vs_active_learning,
-        CONFIG.paths.model_comparison_f1_figure,
         CONFIG.paths.active_learning_curve_figure,
-        CONFIG.paths.random_vs_active_learning_figure,
         CONFIG.paths.final_research_evaluation_figure,
-        CONFIG.paths.final_evaluation_comparison,
-        CONFIG.paths.benchmark_figure,
-        CONFIG.paths.workload_figure,
+        CONFIG.paths.dataset_profile,
+        CONFIG.paths.blocking_summary,
+        CONFIG.paths.hyperparameter_tuning,
         CONFIG.paths.evaluation_summary,
         CONFIG.paths.scoring_method_summary,
         CONFIG.paths.active_learning_summary,
+        CONFIG.paths.hyperparameter_tuning_summary,
     ]
     rows = [{"Evidence file": str(path), "Available": "Yes" if path.exists() else "No"} for path in evidence]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -491,6 +503,7 @@ def _report_evidence() -> None:
         CONFIG.paths.evaluation_summary,
         CONFIG.paths.scoring_method_summary,
         CONFIG.paths.active_learning_summary,
+        CONFIG.paths.hyperparameter_tuning_summary,
         CONFIG.paths.limitations,
     ]:
         if path.exists():

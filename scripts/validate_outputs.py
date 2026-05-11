@@ -18,8 +18,8 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.final_research_evaluation,
     CONFIG.paths.threshold_sweep,
     CONFIG.paths.model_comparison,
+    CONFIG.paths.hyperparameter_tuning,
     CONFIG.paths.active_learning_rounds,
-    CONFIG.paths.random_vs_active_learning,
     CONFIG.paths.review_queue,
     CONFIG.paths.classified_pairs,
     CONFIG.paths.final_decisions,
@@ -30,6 +30,7 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.blocking_summary,
     CONFIG.paths.scoring_method_summary,
     CONFIG.paths.active_learning_summary,
+    CONFIG.paths.hyperparameter_tuning_summary,
     CONFIG.paths.benchmark_figure,
     CONFIG.paths.workload_figure,
     CONFIG.paths.workload_percentage_figure,
@@ -38,7 +39,6 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.recall_workload_figure,
     CONFIG.paths.model_comparison_f1_figure,
     CONFIG.paths.active_learning_curve_figure,
-    CONFIG.paths.random_vs_active_learning_figure,
     CONFIG.paths.label_efficiency_curve_figure,
     CONFIG.paths.final_research_evaluation_figure,
 ]
@@ -52,10 +52,8 @@ EXPECTED_METHODS = {
 
 EXPECTED_FINAL_RESEARCH_METHODS = {
     "Human-only Clerical Review Baseline",
-    "Hybrid EMPI Baseline",
     "AI-only ML Matcher",
     "AI + HITL Active Learning Matcher",
-    "Random Sampling HITL Baseline",
 }
 
 REQUIRED_METRIC_COLUMNS = {
@@ -72,6 +70,10 @@ REQUIRED_METRIC_COLUMNS = {
 
 def _pass(message: str) -> None:
     print(f"PASS: {message}")
+
+
+def _warn(message: str) -> None:
+    print(f"WARN: {message}")
 
 
 def _failures_for_files() -> list[str]:
@@ -105,19 +107,22 @@ def _validate_final_research_evaluation() -> list[str]:
     missing_columns = REQUIRED_METRIC_COLUMNS - set(df.columns)
     if missing_columns:
         failures.append(f"final_research_evaluation.csv missing columns: {sorted(missing_columns)}")
-    if len(df) != 5:
-        failures.append("final_research_evaluation.csv must contain exactly five rows")
+    for required_column in ["Role", "Dataset", "Evaluation scope"]:
+        if required_column not in df.columns:
+            failures.append(f"final_research_evaluation.csv missing column: {required_column}")
+    if "Dataset" in df.columns and set(df["Dataset"]) != {"FEBRL4"}:
+        failures.append("final_research_evaluation.csv must identify FEBRL4 as the evaluation dataset")
+    if len(df) != 3:
+        failures.append("final_research_evaluation.csv must contain exactly three rows")
     expected_order = [
         "Human-only Clerical Review Baseline",
         "AI-only ML Matcher",
         "AI + HITL Active Learning Matcher",
-        "Random Sampling HITL Baseline",
-        "Hybrid EMPI Baseline",
     ]
     if "Method" in df.columns and df["Method"].to_list() != expected_order:
         failures.append("final_research_evaluation.csv should list primary methods before supporting baselines")
     if not failures:
-        _pass("final research evaluation has the expected five methods")
+        _pass("final research evaluation has the expected three report-facing methods")
     return failures
 
 
@@ -132,11 +137,18 @@ def _validate_threshold_sweep() -> list[str]:
 def _validate_active_learning_outputs() -> list[str]:
     failures: list[str] = []
     model_comparison = pd.read_csv(CONFIG.paths.model_comparison)
+    tuning = pd.read_csv(CONFIG.paths.hyperparameter_tuning)
     rounds = pd.read_csv(CONFIG.paths.active_learning_rounds)
-    random_vs_active = pd.read_csv(CONFIG.paths.random_vs_active_learning)
     expected_models = {"Hybrid EMPI Score", "Logistic Regression", "Random Forest", "Gradient Boosting"}
     if set(model_comparison.get("Method", [])) != expected_models:
         failures.append("model_comparison.csv must contain Hybrid EMPI Score, Logistic Regression, Random Forest, and Gradient Boosting")
+    required_tuning_columns = {"Method", "Best CV F1-score", "Best parameters", "Tuning runtime seconds", "Selection note"}
+    missing_tuning_columns = required_tuning_columns - set(tuning.columns)
+    if missing_tuning_columns:
+        failures.append(f"hyperparameter_tuning.csv missing columns: {sorted(missing_tuning_columns)}")
+    expected_tuned_models = {"Logistic Regression", "Random Forest", "Gradient Boosting"}
+    if set(tuning.get("Method", [])) != expected_tuned_models:
+        failures.append("hyperparameter_tuning.csv must contain Logistic Regression, Random Forest, and Gradient Boosting")
     required_round_columns = {
         "Round",
         "Strategy",
@@ -153,21 +165,22 @@ def _validate_active_learning_outputs() -> list[str]:
     missing_round_columns = required_round_columns - set(rounds.columns)
     if missing_round_columns:
         failures.append(f"active_learning_rounds.csv missing columns: {sorted(missing_round_columns)}")
-    if rounds.empty or random_vs_active.empty:
-        failures.append("active-learning tables must have rows")
-    if "Active Learning" not in set(random_vs_active.get("Strategy", [])):
-        failures.append("random_vs_active_learning.csv must include Active Learning rows")
-    if "Random Sampling" not in set(random_vs_active.get("Strategy", [])):
-        failures.append("random_vs_active_learning.csv must include Random Sampling rows")
-    for strategy_name, group in random_vs_active.groupby("Strategy"):
-        labelled_counts = group.sort_values("Round")["Labelled pairs"].astype(int).to_list()
+    if rounds.empty:
+        failures.append("active_learning_rounds.csv must have rows")
+    else:
+        sorted_rounds = rounds.sort_values("Round")
+        labelled_counts = sorted_rounds["Labelled pairs"].astype(int).to_list()
         if labelled_counts != sorted(labelled_counts):
-            failures.append(f"{strategy_name} labelled pair counts must increase monotonically across rounds")
-    first_round = rounds.sort_values("Round").iloc[0]
-    if int(first_round["Round"]) != 0 or int(first_round["New labels added"]) != 0:
-        failures.append("Round 0 must be the seed-only model with New labels added = 0")
+            failures.append("active_learning_rounds.csv labelled pair counts must increase monotonically")
+        first_round = sorted_rounds.iloc[0]
+        if int(first_round["Round"]) != 0 or int(first_round["New labels added"]) != 0:
+            failures.append("Round 0 must be the seed-only model with New labels added = 0")
     if not failures:
         _pass("active-learning model comparison and learning-curve outputs are present")
+    if CONFIG.paths.random_vs_active_learning.exists():
+        _warn("random_vs_active_learning.csv exists as an internal exploratory output and is not part of final evaluation")
+    if CONFIG.paths.random_vs_active_learning_figure.exists():
+        _warn("random_vs_active_learning.png exists as an internal exploratory figure and is not part of final evaluation")
     return failures
 
 
@@ -225,6 +238,16 @@ def _validate_readme_framing() -> list[str]:
     for phrase in forbidden_active_learning_phrases:
         if phrase in text:
             failures.append(f"README should not frame active learning as a side feature: '{phrase}'")
+    forbidden_final_method_phrases = [
+        "random sampling hitl baseline",
+        "hybrid empi baseline",
+        "supporting baselines",
+        "five-method",
+        "five methods",
+    ]
+    for phrase in forbidden_final_method_phrases:
+        if phrase in text:
+            failures.append(f"README should not describe supporting methods as final evaluation methods: '{phrase}'")
     if not failures:
         _pass("README frames FEBRL4 and active learning as the final method")
     return failures

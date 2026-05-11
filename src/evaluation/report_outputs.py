@@ -218,7 +218,7 @@ def write_report_texts(metrics: pd.DataFrame, blocking_stats: dict[str, float]) 
     )
     CONFIG.paths.evaluation_summary.write_text(
         "# Evaluation Summary\n\n"
-        "The central final evaluation for the project is written by the active-learning experiment to `outputs/tables/final_research_evaluation.csv`. It compares Human-only Clerical Review Baseline, AI-only ML Matcher, AI + HITL Active Learning Matcher, Random Sampling HITL Baseline, and Hybrid EMPI Baseline.\n\n"
+        "The central final evaluation for the project is written by the active-learning experiment to `outputs/tables/final_research_evaluation.csv`. It contains only three report-facing methods: Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.\n\n"
         "The table below is supporting evidence for the operational EMPI grey-zone workflow. It uses exactly three methods: Human-only Clerical Review Baseline, AI-only EMPI Matcher, and AI + HITL Grey-Zone Review.\n\n"
         "AI-only treats grey-zone pairs as unresolved non-positive predictions, so true links in the grey zone count as missed links.\n\n"
         "Formal benchmark metrics are generated from the evaluation pipeline. The AI + HITL result uses simulated grey-zone review based on FEBRL ground truth to represent an idealised human reviewer. Live reviewer decisions in Streamlit are stored for demonstration and audit logging, but they do not automatically overwrite formal benchmark metrics unless the pipeline is explicitly rerun in merge mode.\n\n"

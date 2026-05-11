@@ -28,7 +28,7 @@ Earlier prototypes considered other data options, but Synthea duplicate generati
 
 ## Research Claim
 
-An active-learning ML-based HITL record linkage workflow can improve duplicate patient record detection by using human review labels to improve the matcher while reducing unnecessary manual review.
+An AI-assisted active-learning HITL record linkage workflow can improve duplicate patient record detection by using professional review feedback to improve the matcher while reducing unnecessary manual review.
 
 ## EMPI-Inspired HITL Workflow
 
@@ -45,11 +45,11 @@ An active-learning ML-based HITL record linkage workflow can improve duplicate p
 
 The main system is **EMPI-inspired HITL record linkage**. It provides the healthcare-style workflow: preprocessing, blocking, field-level comparison, threshold-based decision logic, and grey-zone human review.
 
-The **Hybrid EMPI-style score** is kept as a transparent non-ML baseline, fallback scoring method, and explainability layer. It is based on field-level weights and disagreement penalties.
+The **Hybrid EMPI-style score** is kept as a transparent fallback scoring method and explainability layer. It is based on field-level weights and disagreement penalties, but it is not one of the final evaluation methods.
 
 The **Active Learning ML Matcher** is the main proposed AI + HITL method. It learns from field-level comparison features, predicts match probability, selects uncertain pairs for review, simulates reviewer labels with FEBRL ground truth for reproducible experiments, and retrains in batches.
 
-The supporting three-condition EMPI evaluation is retained as evidence for the grey-zone review workflow. The central final evaluation focuses on Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher, with Random Sampling HITL and Hybrid EMPI reported as supporting baselines.
+The final report-facing evaluation focuses only on Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.
 
 ## Central Final Evaluation Methods
 
@@ -61,12 +61,6 @@ The supporting three-condition EMPI evaluation is retained as evidence for the g
 
 3. AI + HITL Active Learning Matcher
    The main proposed method. The classifier selects uncertain pairs, receives simulated reviewer labels, retrains in batches, and evaluates on a frozen test set.
-
-4. Random Sampling HITL Baseline
-   Uses the same label budget as active learning but selects review pairs randomly.
-
-5. Hybrid EMPI Baseline
-   A transparent non-ML baseline and fallback based on field-level weights and disagreement penalties.
 
 ## Developer Quick Start
 
@@ -154,6 +148,8 @@ python scripts/run_active_learning.py
 
 This trains lightweight classifiers on FEBRL candidate-pair comparison features, simulates reviewer labels using FEBRL ground truth, and writes active-learning evidence outputs to `outputs/`.
 
+The active-learning run also tunes Logistic Regression, Random Forest, and Gradient Boosting with `GridSearchCV`. Tuning uses the initial active-learning seed labels only. The frozen test set is reserved for final evaluation.
+
 Active-learning benchmark labels are simulated for reproducibility. Live Streamlit review clicks are stored for demonstration and audit logging, but they are not used as the default active-learning benchmark labels.
 
 ### 4. Validate Outputs
@@ -223,7 +219,7 @@ The automated EMPI matcher blends two signals:
 
 The hybrid score gives stronger weight to fields such as date of birth, surname, postcode, and address because they provide stronger identity evidence than broader or often-missing fields. Pairs above the upper threshold become Auto Match. Pairs below the lower threshold become Auto Non-match. Pairs between the thresholds enter grey-zone human review.
 
-The Active Learning ML Matcher trains Logistic Regression, Random Forest, and Gradient Boosting classifiers on the same field-level comparison features. The model comparison keeps the Hybrid EMPI Score as a non-ML baseline, Logistic Regression as an explainable ML baseline, and tree-based models as nonlinear tabular ML alternatives.
+The Active Learning ML Matcher trains Logistic Regression, Random Forest, and Gradient Boosting classifiers on the same field-level comparison features. `GridSearchCV` tunes each classifier using seed labels only, then the tuned classifier with the strongest cross-validation F1-score is used for active-learning rounds. Hybrid EMPI remains available as a transparent fallback and development reference, but the final evaluation does not treat it as a method.
 
 ## Main Outputs
 
@@ -234,8 +230,8 @@ The `outputs/reports/` files are generated technical summaries, not final academ
 - `outputs/tables/evaluation_metrics.csv`
 - `outputs/tables/threshold_sweep.csv`
 - `outputs/tables/model_comparison.csv`
+- `outputs/tables/hyperparameter_tuning.csv`
 - `outputs/tables/active_learning_rounds.csv`
-- `outputs/tables/random_vs_active_learning.csv`
 - `outputs/tables/review_queue.csv`
 - `outputs/tables/final_decisions.csv`
 - `outputs/tables/simulated_review_decisions.csv`
@@ -244,6 +240,7 @@ The `outputs/reports/` files are generated technical summaries, not final academ
 - `outputs/reports/scoring_method_summary.md`
 - `outputs/reports/evaluation_summary.md`
 - `outputs/reports/active_learning_summary.md`
+- `outputs/reports/hyperparameter_tuning_summary.md`
 - `outputs/reports/threshold_sweep_summary.md`
 - `outputs/reports/methodology_summary.md`
 - `outputs/reports/limitations.md`
@@ -257,7 +254,6 @@ The `outputs/reports/` files are generated technical summaries, not final academ
 - `outputs/figures/recall_vs_review_workload.png`
 - `outputs/figures/model_comparison_f1.png`
 - `outputs/figures/active_learning_curve.png`
-- `outputs/figures/random_vs_active_learning.png`
 - `outputs/figures/label_efficiency_curve.png`
 - `outputs/figures/final_research_evaluation.png`
 

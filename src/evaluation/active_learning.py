@@ -4,10 +4,11 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 
 from src.utils.config import CONFIG
 from src.utils.io import ensure_directories_exist, save_csv
@@ -57,18 +58,30 @@ def _load_candidate_pairs_for_active_learning() -> pd.DataFrame:
     return pairs
 
 
-def _models(random_state: int) -> dict[str, object]:
-    """Return small classifiers suitable for fast local active-learning demos."""
+def _model_specs(random_state: int) -> dict[str, tuple[object, dict[str, list[object]]]]:
+    """Return lightweight model grids used for reproducible hyperparameter tuning."""
     return {
-        "Logistic Regression": LogisticRegression(max_iter=1000, class_weight="balanced", random_state=random_state),
-        "Random Forest": RandomForestClassifier(
-            n_estimators=80,
-            max_depth=8,
-            class_weight="balanced",
-            random_state=random_state,
-            n_jobs=1,
+        "Logistic Regression": (
+            LogisticRegression(max_iter=1000, class_weight="balanced", random_state=random_state),
+            {"C": [0.1, 1.0, 10.0]},
         ),
-        "Gradient Boosting": GradientBoostingClassifier(random_state=random_state),
+        "Random Forest": (
+            RandomForestClassifier(class_weight="balanced", random_state=random_state, n_jobs=1),
+            {
+                "n_estimators": [60, 100],
+                "max_depth": [4, 8, None],
+                "min_samples_leaf": [1, 2],
+                "max_features": ["sqrt", None],
+            },
+        ),
+        "Gradient Boosting": (
+            GradientBoostingClassifier(random_state=random_state),
+            {
+                "n_estimators": [50, 100],
+                "learning_rate": [0.05, 0.1],
+                "max_depth": [2, 3],
+            },
+        ),
     }
 
 
@@ -104,7 +117,43 @@ def _hybrid_baseline(test_pairs: pd.DataFrame, y_test: pd.Series) -> dict[str, f
     row["Method"] = "Hybrid EMPI Score"
     row["Reviewed pairs"] = 0
     row["Runtime seconds"] = 0.0
+    row["Best CV F1-score"] = ""
+    row["Best parameters"] = "Non-ML weighted baseline"
     return row
+
+
+def _tune_models(
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+    random_state: int,
+) -> tuple[dict[str, object], pd.DataFrame]:
+    """Tune ML classifiers on seed labels without using the frozen test set."""
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+    tuned_models: dict[str, object] = {}
+    rows = []
+    for name, (estimator, param_grid) in _model_specs(random_state).items():
+        start = time.perf_counter()
+        search = GridSearchCV(
+            estimator,
+            param_grid,
+            scoring="f1",
+            cv=cv,
+            n_jobs=1,
+            error_score=0,
+        )
+        search.fit(x_train, y_train)
+        runtime = time.perf_counter() - start
+        tuned_models[name] = search.best_estimator_
+        rows.append(
+            {
+                "Method": name,
+                "Best CV F1-score": float(search.best_score_),
+                "Best parameters": str(search.best_params_),
+                "Tuning runtime seconds": runtime,
+                "Selection note": "Tuned on active-learning seed labels only; frozen test set is not used for model selection.",
+            }
+        )
+    return tuned_models, pd.DataFrame(rows)
 
 
 def _run_model_comparison(
@@ -113,23 +162,29 @@ def _run_model_comparison(
     x_test: pd.DataFrame,
     y_test: pd.Series,
     test_pairs: pd.DataFrame,
-    random_state: int,
+    tuned_models: dict[str, object],
+    tuning: pd.DataFrame,
 ) -> pd.DataFrame:
     rows = [_hybrid_baseline(test_pairs, y_test)]
-    for name, model in _models(random_state).items():
+    tuning_lookup = tuning.set_index("Method").to_dict("index")
+    for name, model_template in tuned_models.items():
         start = time.perf_counter()
+        model = clone(model_template)
         model.fit(x_train, y_train)
         probabilities = _predict_probability(model, x_test)
         row = _metrics(y_test, probabilities)
         row["Method"] = name
         row["Reviewed pairs"] = 0
         row["Runtime seconds"] = time.perf_counter() - start
+        row["Best CV F1-score"] = tuning_lookup[name]["Best CV F1-score"]
+        row["Best parameters"] = tuning_lookup[name]["Best parameters"]
         rows.append(row)
     return pd.DataFrame(rows)
 
 
 def _active_learning_loop(
     model_name: str,
+    model_template: object,
     x_pool: pd.DataFrame,
     y_pool: pd.Series,
     x_test: pd.DataFrame,
@@ -145,13 +200,13 @@ def _active_learning_loop(
     labelled = list(seed_indices)
     unlabelled = [idx for idx in x_pool.index if idx not in labelled]
     rows = []
-    model = _models(random_state)[model_name]
 
     for round_number in range(rounds + 1):
         new_labels_added = 0
         if round_number > 0 and unlabelled:
             # Select a batch using the previous labelled set, simulate reviewer
             # labels with FEBRL truth, then retrain before evaluating this round.
+            model = clone(model_template)
             model.fit(x_pool.loc[labelled], y_pool.loc[labelled])
             if strategy == "Active Learning":
                 pool_probabilities = _predict_probability(model, x_pool.loc[unlabelled])
@@ -166,6 +221,7 @@ def _active_learning_loop(
             unlabelled = [idx for idx in unlabelled if idx not in selected_set]
             new_labels_added = len(selected)
 
+        model = clone(model_template)
         model.fit(x_pool.loc[labelled], y_pool.loc[labelled])
         probabilities = _predict_probability(model, x_test)
         row = _metrics(y_test, probabilities)
@@ -217,19 +273,18 @@ def _bar_chart(df: pd.DataFrame, path: Path) -> None:
 def _final_research_evaluation(
     comparison: pd.DataFrame,
     active_rounds: pd.DataFrame,
-    random_rounds: pd.DataFrame,
     candidate_count: int,
+    selected_model: str,
 ) -> pd.DataFrame:
     """Build the central final comparison for the active-learning research claim."""
-    hybrid = comparison[comparison["Method"] == "Hybrid EMPI Score"].iloc[0]
-    ml = comparison[comparison["Method"] != "Hybrid EMPI Score"].sort_values("F1-score", ascending=False).iloc[0]
+    ml = comparison[comparison["Method"] == selected_model].iloc[0]
     active = active_rounds.sort_values("F1-score", ascending=False).iloc[0]
-    random = random_rounds.sort_values("F1-score", ascending=False).iloc[0]
 
     rows = [
         {
             "Method": "Human-only Clerical Review Baseline",
             "Role": "Primary baseline",
+            "Dataset": "FEBRL4",
             "Precision": 1.0,
             "Recall": 1.0,
             "F1-score": 1.0,
@@ -245,6 +300,7 @@ def _final_research_evaluation(
         {
             "Method": "AI-only ML Matcher",
             "Role": "Primary AI-only comparison",
+            "Dataset": "FEBRL4",
             "Precision": ml["Precision"],
             "Recall": ml["Recall"],
             "F1-score": ml["F1-score"],
@@ -255,11 +311,12 @@ def _final_research_evaluation(
             "Estimated review time": "0 seconds",
             "Training labels used": CONFIG.active_learning.seed_positive_labels + CONFIG.active_learning.seed_negative_labels,
             "Evaluation scope": "Frozen active-learning test set",
-            "Key interpretation": "Best seed-trained ML classifier without further active-learning review batches.",
+            "Key interpretation": "Tuned ML classifier without further active-learning review batches.",
         },
         {
             "Method": "AI + HITL Active Learning Matcher",
             "Role": "Primary proposed method",
+            "Dataset": "FEBRL4",
             "Precision": active["Precision"],
             "Recall": active["Recall"],
             "F1-score": active["F1-score"],
@@ -271,36 +328,6 @@ def _final_research_evaluation(
             "Training labels used": int(active["Labelled pairs"]),
             "Evaluation scope": "Frozen active-learning test set",
             "Key interpretation": "Main proposed method: uncertain reviewed labels are added in batches and the classifier retrains.",
-        },
-        {
-            "Method": "Random Sampling HITL Baseline",
-            "Role": "Supporting baseline",
-            "Precision": random["Precision"],
-            "Recall": random["Recall"],
-            "F1-score": random["F1-score"],
-            "False positives": int(random["False positives"]),
-            "False negatives": int(random["False negatives"]),
-            "Candidate pairs reviewed": int(random["Labelled pairs"]),
-            "Review workload percentage": float(random["Labelled pairs"]) / candidate_count * 100,
-            "Estimated review time": f"{float(random['Labelled pairs']) * CONFIG.matcher.manual_review_seconds_per_pair:,.0f} seconds",
-            "Training labels used": int(random["Labelled pairs"]),
-            "Evaluation scope": "Frozen active-learning test set",
-            "Key interpretation": "Same label budget as active learning, but review pairs are selected randomly.",
-        },
-        {
-            "Method": "Hybrid EMPI Baseline",
-            "Role": "Supporting transparent baseline",
-            "Precision": hybrid["Precision"],
-            "Recall": hybrid["Recall"],
-            "F1-score": hybrid["F1-score"],
-            "False positives": int(hybrid["False positives"]),
-            "False negatives": int(hybrid["False negatives"]),
-            "Candidate pairs reviewed": 0,
-            "Review workload percentage": 0.0,
-            "Estimated review time": "0 seconds",
-            "Training labels used": 0,
-            "Evaluation scope": "Frozen active-learning test set",
-            "Key interpretation": "Transparent non-ML baseline and fallback using field weights and penalties.",
         },
     ]
     return pd.DataFrame(rows)
@@ -323,9 +350,15 @@ def _final_research_chart(df: pd.DataFrame, path: Path) -> None:
     plt.close()
 
 
-def _write_summary(rounds: pd.DataFrame, comparison: pd.DataFrame, final_evaluation: pd.DataFrame) -> None:
+def _write_summary(
+    rounds: pd.DataFrame,
+    comparison: pd.DataFrame,
+    final_evaluation: pd.DataFrame,
+    tuning: pd.DataFrame,
+) -> None:
     best = rounds.sort_values("F1-score", ascending=False).iloc[0]
-    best_model = comparison.sort_values("F1-score", ascending=False).iloc[0]
+    best_tuned = tuning.sort_values("Best CV F1-score", ascending=False).iloc[0]
+    selected_test = comparison[comparison["Method"] == best_tuned["Method"]].iloc[0]
     central = final_evaluation[final_evaluation["Method"] == "AI + HITL Active Learning Matcher"].iloc[0]
     text = f"""# Active Learning Summary
 
@@ -341,6 +374,10 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 - Rounds: {CONFIG.active_learning.rounds}
 - Random state: {CONFIG.active_learning.random_state}
 - Frozen test size: {CONFIG.active_learning.test_size:.2f}
+
+## Hyperparameter Tuning
+
+Model hyperparameters are tuned with `GridSearchCV` on the initial active-learning seed labels only. The frozen test set is not used for tuning or model selection. Tuning evidence is saved to `{CONFIG.paths.hyperparameter_tuning}`.
 
 ## Best Active-Learning Round
 
@@ -360,12 +397,13 @@ Formal active-learning experiments use FEBRL ground truth to simulate reviewer l
 - Candidate pairs reviewed: {int(central['Candidate pairs reviewed'])}
 - Review workload percentage: {central['Review workload percentage']:.3f}%
 
-## Best Model Comparison Result
+## Selected Tuned ML Classifier
 
-- Method: {best_model['Method']}
-- Precision: {best_model['Precision']:.3f}
-- Recall: {best_model['Recall']:.3f}
-- F1-score: {best_model['F1-score']:.3f}
+- Method: {best_tuned['Method']}
+- Best CV F1-score: {best_tuned['Best CV F1-score']:.3f}
+- Frozen test precision: {selected_test['Precision']:.3f}
+- Frozen test recall: {selected_test['Recall']:.3f}
+- Frozen test F1-score: {selected_test['F1-score']:.3f}
 
 ## Interpretation
 
@@ -373,9 +411,30 @@ The EMPI-inspired pipeline provides the healthcare-style record linkage structur
 
 The Hybrid EMPI Score is retained as a transparent non-ML baseline and fallback scoring method. It is not presented as the main AI model.
 
-The Active Learning ML Matcher is the main proposed method because it uses reviewer labels to improve future predictions over training rounds. Random Sampling HITL is included as a baseline to show whether uncertainty sampling is more label-efficient than reviewing randomly selected pairs.
+The Active Learning ML Matcher is the main proposed method because it uses simulated professional reviewer labels to improve future predictions over training rounds. The final report-facing evaluation is limited to Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.
 """
     CONFIG.paths.active_learning_summary.write_text(text, encoding="utf-8")
+
+
+def _write_tuning_summary(tuning: pd.DataFrame) -> None:
+    best = tuning.sort_values("Best CV F1-score", ascending=False).iloc[0]
+    text = f"""# Hyperparameter Tuning Summary
+
+The active-learning experiment tunes Logistic Regression, Random Forest, and Gradient Boosting with `GridSearchCV`. Tuning uses the initial seed labels only, so the frozen test set remains reserved for evaluation.
+
+## Best Tuned Classifier
+
+- Method: {best['Method']}
+- Best CV F1-score: {best['Best CV F1-score']:.3f}
+- Best parameters: `{best['Best parameters']}`
+
+## Full Tuning Table
+
+```
+{tuning.to_string(index=False)}
+```
+"""
+    CONFIG.paths.hyperparameter_tuning_summary.write_text(text, encoding="utf-8")
 
 
 def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
@@ -401,20 +460,26 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         rng,
     )
 
+    tuned_models, tuning = _tune_models(
+        x_train_pool.loc[seed],
+        y_train_pool.loc[seed],
+        CONFIG.active_learning.random_state,
+    )
     comparison = _run_model_comparison(
         x_train_pool.loc[seed],
         y_train_pool.loc[seed],
         x_test,
         y_test,
         test_pairs,
-        CONFIG.active_learning.random_state,
+        tuned_models,
+        tuning,
     )
-    best_model = comparison[comparison["Method"] != "Hybrid EMPI Score"].sort_values("F1-score", ascending=False).iloc[0][
-        "Method"
-    ]
+    best_model = tuning.sort_values("Best CV F1-score", ascending=False).iloc[0]["Method"]
+    best_model_template = tuned_models[best_model]
 
     active_rounds = _active_learning_loop(
         best_model,
+        best_model_template,
         x_train_pool,
         y_train_pool,
         x_test,
@@ -427,6 +492,7 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
     )
     random_rounds = _active_learning_loop(
         best_model,
+        best_model_template,
         x_train_pool,
         y_train_pool,
         x_test,
@@ -438,8 +504,9 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "Random Sampling",
     )
     random_vs_active = pd.concat([active_rounds, random_rounds], ignore_index=True)
-    final_research = _final_research_evaluation(comparison, active_rounds, random_rounds, len(pairs))
+    final_research = _final_research_evaluation(comparison, active_rounds, len(pairs), best_model)
 
+    save_csv(tuning, CONFIG.paths.hyperparameter_tuning)
     save_csv(comparison, CONFIG.paths.model_comparison)
     save_csv(active_rounds, CONFIG.paths.active_learning_rounds)
     save_csv(random_vs_active, CONFIG.paths.random_vs_active_learning)
@@ -459,8 +526,10 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "Recall",
     )
     _final_research_chart(final_research, CONFIG.paths.final_research_evaluation_figure)
-    _write_summary(active_rounds, comparison, final_research)
+    _write_summary(active_rounds, comparison, final_research, tuning)
+    _write_tuning_summary(tuning)
     return {
+        "hyperparameter_tuning": tuning,
         "model_comparison": comparison,
         "active_learning_rounds": active_rounds,
         "random_vs_active_learning": random_vs_active,

@@ -31,6 +31,7 @@ class PathConfig:
     decision_counts_table: Path = tables_dir / "decision_counts_table.csv"
     threshold_sweep: Path = tables_dir / "threshold_sweep.csv"
     model_comparison: Path = tables_dir / "model_comparison.csv"
+    hyperparameter_tuning: Path = tables_dir / "hyperparameter_tuning.csv"
     active_learning_rounds: Path = tables_dir / "active_learning_rounds.csv"
     random_vs_active_learning: Path = tables_dir / "random_vs_active_learning.csv"
 
@@ -43,6 +44,7 @@ class PathConfig:
     experiment_summary: Path = reports_dir / "experiment_summary.md"
     threshold_sweep_summary: Path = reports_dir / "threshold_sweep_summary.md"
     active_learning_summary: Path = reports_dir / "active_learning_summary.md"
+    hyperparameter_tuning_summary: Path = reports_dir / "hyperparameter_tuning_summary.md"
 
     benchmark_figure: Path = figures_dir / "benchmark_comparison.png"
     workload_figure: Path = figures_dir / "workload_comparison.png"
