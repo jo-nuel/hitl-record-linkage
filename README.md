@@ -171,6 +171,14 @@ streamlit run app.py
 
 Open the local Streamlit URL shown in the terminal. It is usually `http://localhost:8501`.
 
+Streamlit is used for demo and evidence review. For presentation, use this path:
+
+1. Overview
+2. Dataset & Blocking
+3. Human Review Queue
+4. Learning Curves
+5. Final Evaluation
+
 Dashboard review modes:
 
 - `simulate` uses FEBRL ground truth to simulate an ideal human reviewer resolving grey-zone pairs. This is best for reproducible benchmark evaluation.
@@ -185,14 +193,15 @@ Dashboard pages:
 
 - Overview
 - Dataset & Blocking
-- Field Evidence
-- Active Learning Workflow
 - Human Review Queue
-- Model Performance
 - Learning Curves
 - Final Evaluation
+- Field Evidence
+- ML Model Selection
 - Threshold Analysis
-- Report Evidence
+- Evidence Files
+
+Advanced controls are hidden in the sidebar so the demo can use pre-generated outputs. Live review decisions are demo/audit records, not formal benchmark labels. Random sampling outputs, if present, are internal development checks only.
 
 ## Platform Notes
 

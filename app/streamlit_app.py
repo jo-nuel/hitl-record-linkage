@@ -31,6 +31,7 @@ MODEL_OPTIONS = [
 
 
 def _read_csv(path: Path, dtype: str | None = None) -> pd.DataFrame:
+    # Load a CSV output if it exists; otherwise return an empty table.
     if not path.exists():
         return pd.DataFrame()
     if dtype:
@@ -44,6 +45,7 @@ def _cached_csv(path_text: str, modified_time: float, dtype: str | None = None) 
 
 
 def _load(path: Path, dtype: str | None = None) -> pd.DataFrame:
+    # Include modified time in the cache key so refreshed outputs appear in the demo.
     return _cached_csv(str(path), path.stat().st_mtime if path.exists() else 0, dtype)
 
 
@@ -121,46 +123,35 @@ def _overview() -> None:
     st.header("Overview")
     st.subheader("AI-Assisted Active Learning HITL Record Linkage using FEBRL4")
     st.write(
-        "This dashboard presents a research prototype for detecting linked patient-style records. "
-        "The EMPI-inspired pipeline provides the healthcare-style structure: preprocessing, blocking, field-level comparison, "
-        "threshold-based decision logic, and grey-zone human review. "
-        "The Active Learning ML Matcher is the main proposed AI + HITL method. It predicts match probability, "
-        "selects uncertain pairs for review, stores labels, and retrains in batches."
+        "This prototype tests whether an AI-assisted HITL workflow can reduce manual review while keeping uncertain "
+        "record matches under human review."
     )
     st.info(
-        "Method positioning: Active Learning ML Matcher is the main proposed method. "
-        "Hybrid EMPI Score is kept only as a transparent fallback and explainability layer."
+        "Final method: an ML matcher predicts match probability, uncertain pairs are reviewed, simulated reviewer labels "
+        "are added to training data, and the classifier retrains in batches."
     )
     _section_note(
-        "Research aim: evaluate whether active-learning ML-based HITL can improve duplicate record detection by using review labels to improve the matcher while reducing unnecessary manual review."
+        "FEBRL4 is benchmark data, not real hospital data. Formal reviewer labels are simulated from FEBRL ground truth for reproducible evaluation."
     )
     _top_metric_cards()
-    st.markdown("### Presentation Workflow")
+    st.markdown("### Demo Workflow")
     _workflow_cards(
         [
             "FEBRL4",
-            "Preprocessing",
             "Blocking",
-            "Field Comparison",
-            "ML Match Probability",
-            "Uncertainty Selection",
+            "Field comparison",
+            "ML scoring",
             "Human Review",
-            "Batch Retraining",
+            "Batch retraining",
             "Evaluation",
         ]
-    )
-    st.markdown("### Important Evaluation Note")
-    st.write(
-        "Formal active-learning HITL labels are simulated using FEBRL ground truth. "
-        "Live review clicks demonstrate the review workflow and audit logging. "
-        "A frozen test set must not be used for active-learning training."
     )
 
 
 def _dataset_and_blocking() -> None:
     st.header("Dataset & Blocking")
     st.write(
-        "Blocking reduces the search space from all possible record pairs to likely candidate pairs while trying to preserve true links."
+        "Blocking reduces the number of pairs the system needs to compare, but it can still miss some true links before matching begins."
     )
     profile = _read_markdown(CONFIG.paths.dataset_profile)
     if profile:
@@ -317,15 +308,16 @@ def _active_learning_workflow() -> None:
 
 def _human_review_queue() -> None:
     st.header("Human Review Queue")
-    st.caption("Review one uncertain candidate pair at a time. Confirm and reject decisions are final. Skip keeps the pair unresolved.")
+    st.caption("Review one uncertain candidate pair at a time. Skip does not finalise the pair. It leaves the pair unresolved.")
     st.info(
-        "Live review decisions demonstrate workflow and audit logging. They can become future training labels, but formal benchmark active-learning results use simulated labels from FEBRL ground truth."
+        "Live review decisions are stored for demo and audit use only. Formal benchmark results use simulated reviewer labels."
     )
     queue = _load(CONFIG.paths.review_queue, dtype=str)
     decisions = load_review_decisions(CONFIG.paths.review_decisions)
     if queue.empty:
         _show_missing(CONFIG.paths.review_queue, "python scripts/run_pipeline.py --review-mode simulate")
         return
+    # Ground truth must never be shown in the review queue.
     if "is_true_link" in queue.columns:
         st.error("Safety issue: review_queue.csv exposes ground truth. Regenerate outputs before demo.")
         return
@@ -389,11 +381,10 @@ def _human_review_queue() -> None:
 
 
 def _model_performance() -> None:
-    st.header("Model Performance")
+    st.header("ML Model Selection")
     st.write(
-        "This page shows how the selected ML matcher is tuned and checked before active-learning evaluation. "
-        "Logistic Regression is the explainable ML baseline. Random Forest and Gradient Boosting test whether nonlinear tabular models improve linkage performance. "
-        "Hybrid EMPI may appear in the internal comparison table as a transparent scoring reference, not as a final evaluation method."
+        "This page shows that the selected ML matcher was chosen through simple tuning, not guessed. "
+        "Hybrid EMPI is kept as a fallback and explanation score, not as a final evaluation method."
     )
     tuning = _load(CONFIG.paths.hyperparameter_tuning)
     if tuning.empty:
@@ -424,7 +415,8 @@ def _model_performance() -> None:
 def _learning_curves() -> None:
     st.header("Learning Curves")
     st.write(
-        "Learning curves show whether the proposed AI + HITL matcher improves as simulated professional review labels are added in batches."
+        "Round 0 uses seed labels only. Each later round adds a batch of simulated reviewer labels, retrains the model, "
+        "and evaluates on the frozen test set."
     )
     active_rounds = _load(CONFIG.paths.active_learning_rounds)
     random_vs_active = _load(CONFIG.paths.random_vs_active_learning)
@@ -436,9 +428,9 @@ def _learning_curves() -> None:
     _show_image(CONFIG.paths.active_learning_curve_figure, "Active-learning curve.", "python scripts/run_active_learning.py")
     _show_image(CONFIG.paths.label_efficiency_curve_figure, "Label efficiency curve.", "python scripts/run_active_learning.py")
     if not random_vs_active.empty:
-        with st.expander("Internal exploratory comparison: random sampling"):
+        with st.expander("Internal check only"):
             st.write(
-                "This table is kept for development checking only. It is not part of the final report-facing evaluation."
+                "This was used during development and is not part of the final report evaluation."
             )
             st.dataframe(random_vs_active, use_container_width=True)
             _show_image(
@@ -453,6 +445,10 @@ def _final_evaluation() -> None:
     st.write(
         "The final report-facing comparison contains only three methods: Human-only Clerical Review Baseline, "
         "AI-only ML Matcher, and AI + HITL Active Learning Matcher."
+    )
+    st.info(
+        "Scope note: the human-only baseline estimates the workload of reviewing all blocked candidate pairs. "
+        "The ML methods are evaluated on a frozen test set to avoid training/test leakage. These are benchmark results from FEBRL4, not clinical deployment results."
     )
     final_research = _load(CONFIG.paths.final_research_evaluation)
     if final_research.empty:
@@ -481,8 +477,8 @@ def _threshold_analysis() -> None:
 
 
 def _report_evidence() -> None:
-    st.header("Report Evidence")
-    st.write("Use these outputs as evidence for the final report and presentation. Do not copy live review ground truth into the demo.")
+    st.header("Evidence Files")
+    st.write("These are the main generated files to use as report evidence.")
     evidence = [
         CONFIG.paths.final_research_evaluation,
         CONFIG.paths.active_learning_rounds,
@@ -514,54 +510,55 @@ def _report_evidence() -> None:
 def _sidebar() -> str:
     with st.sidebar:
         st.markdown("### Project")
-        st.write("AI-Assisted HITL Record Linkage")
+        st.write("AI-Assisted Active Learning HITL")
         st.markdown("### Dataset")
         st.write("FEBRL4 benchmark data")
-        st.markdown("### Workflow mode")
-        st.write("Active Learning ML Matcher")
-        scoring_method = st.selectbox("Scoring method", MODEL_OPTIONS)
-        review_mode = st.selectbox("Review mode", ["simulate", "merge", "ignore"])
-        lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
-        upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
-        batch_size = st.number_input("Active-learning batch size", min_value=1, value=CONFIG.active_learning.batch_size)
-        rounds = st.number_input("Active-learning rounds", min_value=1, value=CONFIG.active_learning.rounds)
-        random_state = st.number_input("Random state", min_value=0, value=CONFIG.active_learning.random_state)
-        CONFIG.active_learning.batch_size = int(batch_size)
-        CONFIG.active_learning.rounds = int(rounds)
-        CONFIG.active_learning.random_state = int(random_state)
-        st.caption(f"Selected scoring method for demo context: {scoring_method}")
-        st.caption(f"Batch settings shown here: batch={batch_size}, rounds={rounds}, random_state={random_state}.")
-        st.info(
-            "Formal active-learning HITL labels are simulated using FEBRL ground truth. Live review clicks demonstrate workflow and audit logging. Frozen test data must not be used for active-learning training."
-        )
-        if st.button("Run FEBRL pipeline", type="primary", use_container_width=True):
-            with st.spinner("Running FEBRL EMPI pipeline..."):
-                run_experiment(review_mode, lower, upper)
-            st.cache_data.clear()
-            st.success("Pipeline complete.")
-        if st.button("Run active-learning experiment", use_container_width=True):
-            with st.spinner("Running active-learning simulation..."):
-                run_active_learning_experiment()
-            st.cache_data.clear()
-            st.success("Active-learning outputs generated.")
-        if st.button("Reset live review decisions", use_container_width=True):
-            save_review_decisions(pd.DataFrame(), CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
-            st.cache_data.clear()
-            st.rerun()
+        st.caption("Presentation mode uses pre-generated outputs. Regenerate outputs only if needed.")
+
+        # Demo controls are hidden so presentation users do not change experiment settings by accident.
+        with st.expander("Advanced settings"):
+            scoring_method = st.selectbox("Scoring method", MODEL_OPTIONS)
+            review_mode = st.selectbox("Review mode", ["simulate", "merge", "ignore"])
+            st.caption("simulate: uses FEBRL ground truth to simulate reviewer labels.")
+            st.caption("merge: uses saved live review decisions where available.")
+            st.caption("ignore: shows automated decisions without applying review decisions.")
+            lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
+            upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
+            batch_size = st.number_input("Active-learning batch size", min_value=1, value=CONFIG.active_learning.batch_size)
+            rounds = st.number_input("Active-learning rounds", min_value=1, value=CONFIG.active_learning.rounds)
+            random_state = st.number_input("Random state", min_value=0, value=CONFIG.active_learning.random_state)
+            CONFIG.active_learning.batch_size = int(batch_size)
+            CONFIG.active_learning.rounds = int(rounds)
+            CONFIG.active_learning.random_state = int(random_state)
+            st.caption(f"Selected scoring method for demo context: {scoring_method}")
+            if st.button("Run FEBRL pipeline", type="primary", use_container_width=True):
+                with st.spinner("Running FEBRL EMPI pipeline..."):
+                    run_experiment(review_mode, lower, upper)
+                st.cache_data.clear()
+                st.success("Pipeline complete.")
+            if st.button("Run active-learning experiment", use_container_width=True):
+                with st.spinner("Running active-learning simulation..."):
+                    run_active_learning_experiment()
+                st.cache_data.clear()
+                st.success("Active-learning outputs generated.")
+            if st.button("Reset live review decisions", use_container_width=True):
+                # Live review decisions are stored for audit/demo use only.
+                save_review_decisions(pd.DataFrame(), CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
+                st.cache_data.clear()
+                st.rerun()
 
         return st.radio(
             "Pages",
             [
                 "Overview",
                 "Dataset & Blocking",
-                "Field Evidence",
-                "Active Learning Workflow",
                 "Human Review Queue",
-                "Model Performance",
                 "Learning Curves",
                 "Final Evaluation",
+                "Field Evidence",
+                "ML Model Selection",
                 "Threshold Analysis",
-                "Report Evidence",
+                "Evidence Files",
             ],
         )
 
@@ -574,14 +571,13 @@ def main() -> None:
     pages = {
         "Overview": _overview,
         "Dataset & Blocking": _dataset_and_blocking,
-        "Field Evidence": _field_evidence_page,
-        "Active Learning Workflow": _active_learning_workflow,
         "Human Review Queue": _human_review_queue,
-        "Model Performance": _model_performance,
         "Learning Curves": _learning_curves,
         "Final Evaluation": _final_evaluation,
+        "Field Evidence": _field_evidence_page,
+        "ML Model Selection": _model_performance,
         "Threshold Analysis": _threshold_analysis,
-        "Report Evidence": _report_evidence,
+        "Evidence Files": _report_evidence,
     }
     pages[page]()
 
