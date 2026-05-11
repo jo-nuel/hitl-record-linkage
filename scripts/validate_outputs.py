@@ -39,7 +39,10 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.recall_workload_figure,
     CONFIG.paths.model_comparison_f1_figure,
     CONFIG.paths.active_learning_curve_figure,
+    CONFIG.paths.active_learning_error_reduction_figure,
     CONFIG.paths.label_efficiency_curve_figure,
+    CONFIG.paths.final_accuracy_comparison_figure,
+    CONFIG.paths.final_workload_comparison_figure,
     CONFIG.paths.final_research_evaluation_figure,
 ]
 

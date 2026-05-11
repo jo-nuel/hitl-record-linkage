@@ -164,13 +164,17 @@ def _dataset_and_blocking() -> None:
     if blocking.empty:
         _show_missing(CONFIG.paths.blocking_stats, "python scripts/run_pipeline.py --review-mode simulate")
     else:
-        st.markdown("### Blocking Statistics")
-        st.dataframe(blocking, use_container_width=True)
-        c1, c2, c3, c4 = st.columns(4)
+        st.markdown("### Key Blocking Results")
+        c1, c2, c3 = st.columns(3)
         c1.metric("Total possible pairs", _metric_value(blocking, "total_possible_pairs"))
         c2.metric("Candidate pairs", _metric_value(blocking, "candidate_pairs"))
         c3.metric("Reduction ratio", f"{float(blocking.iloc[0]['reduction_ratio']) * 100:.2f}%")
-        c4.metric("Missed true links", _metric_value(blocking, "true_links_missed"))
+        c4, c5, c6 = st.columns(3)
+        c4.metric("True links retained", _metric_value(blocking, "true_links_retained"))
+        c5.metric("True links missed", _metric_value(blocking, "true_links_missed"))
+        c6.metric("Blocking recall", f"{float(blocking.iloc[0]['blocking_recall']) * 100:.2f}%")
+        with st.expander("Full blocking table"):
+            st.dataframe(blocking, use_container_width=True)
     _show_image(CONFIG.paths.resolution_flow_figure, "Candidate-pair resolution flow.")
 
 
@@ -251,7 +255,7 @@ def _field_evidence_page() -> None:
     st.markdown("### Sample Candidate Pair")
     index = st.slider("Example pair", 0, max(len(sample_source) - 1, 0), 0)
     pair = sample_source.iloc[index]
-    st.metric("Model score / probability", f"{float(pair.get('model_score', 0.0)):.3f}")
+    st.metric("ML match probability", f"{float(pair.get('model_score', 0.0)):.3f}")
     _pair_viewer(pair)
 
 
@@ -336,9 +340,10 @@ def _human_review_queue() -> None:
     pair = pending.iloc[0]
     st.markdown("### Current Pair")
     m1, m2, m3 = st.columns(3)
-    m1.metric("Model probability / score", f"{float(pair.get('model_score', 0.0)):.3f}")
+    m1.metric("ML match probability", f"{float(pair.get('model_score', 0.0)):.3f}")
     m2.metric("Evidence score", f"{float(pair.get('hybrid_empi_score', 0.0)):.3f}")
     m3.metric("Current decision", pair.get("model_decision", "Needs Human Review"))
+    st.caption("Evidence score is a rule-based support score from field agreement.")
     st.warning("This pair is in the uncertainty band, so it is sent for human review.")
     _pair_viewer(pair)
 
@@ -391,24 +396,32 @@ def _model_performance() -> None:
         _show_missing(CONFIG.paths.hyperparameter_tuning, "python scripts/run_active_learning.py")
     else:
         st.markdown("### Hyperparameter Tuning")
-        st.dataframe(tuning, use_container_width=True)
+        default_tuning_cols = ["Method", "Best CV F1-score", "Best parameters"]
+        st.dataframe(tuning[default_tuning_cols], use_container_width=True, hide_index=True)
         best_tuned = tuning.sort_values("Best CV F1-score", ascending=False).iloc[0]
         st.info(
             f"Selected active-learning classifier: {best_tuned['Method']} "
             f"(best CV F1-score {float(best_tuned['Best CV F1-score']):.3f})."
         )
+        with st.expander("Tuning runtime and notes"):
+            st.dataframe(tuning, use_container_width=True, hide_index=True)
     comparison = _load(CONFIG.paths.model_comparison)
     if comparison.empty:
         _show_missing(CONFIG.paths.model_comparison, "python scripts/run_active_learning.py")
     else:
-        st.markdown("### Frozen Test-Set Model Comparison")
-        st.dataframe(comparison, use_container_width=True)
+        st.markdown("### Frozen Test-Set ML Check")
+        ml_comparison = comparison[comparison["Method"] != "Hybrid EMPI Score"].copy()
+        metric_cols = ["Method", "Precision", "Recall", "F1-score", "False positives", "False negatives"]
+        st.dataframe(ml_comparison[metric_cols], use_container_width=True, hide_index=True)
         ml_only = comparison[comparison["Method"] != "Hybrid EMPI Score"]
         best = ml_only.sort_values("F1-score", ascending=False).iloc[0] if not ml_only.empty else comparison.iloc[0]
         c1, c2, c3 = st.columns(3)
         c1.metric("Best test-set ML", best["Method"])
         c2.metric("Best F1", f"{float(best['F1-score']):.3f}")
         c3.metric("Best recall", f"{float(best['Recall']):.3f}")
+        with st.expander("Internal fallback/evidence score"):
+            st.write("Hybrid EMPI is kept as a fallback/evidence score, not as a final evaluation method.")
+            st.dataframe(comparison, use_container_width=True, hide_index=True)
     _show_image(CONFIG.paths.model_comparison_f1_figure, "Model comparison by F1-score.", "python scripts/run_active_learning.py")
 
 
@@ -424,9 +437,37 @@ def _learning_curves() -> None:
         _show_missing(CONFIG.paths.active_learning_rounds, "python scripts/run_active_learning.py")
     else:
         st.markdown("### Active-Learning Rounds")
-        st.dataframe(active_rounds, use_container_width=True)
-    _show_image(CONFIG.paths.active_learning_curve_figure, "Active-learning curve.", "python scripts/run_active_learning.py")
-    _show_image(CONFIG.paths.label_efficiency_curve_figure, "Label efficiency curve.", "python scripts/run_active_learning.py")
+        best = active_rounds.sort_values("F1-score", ascending=False).iloc[0]
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Best round", int(best["Round"]))
+        c2.metric("Labels used", f"{int(best['Labelled pairs']):,}")
+        c3.metric("F1-score", f"{float(best['F1-score']):.3f}")
+        c4.metric("False positives", int(best["False positives"]))
+        c5.metric("False negatives", int(best["False negatives"]))
+        default_round_cols = [
+            "Round",
+            "Labelled pairs",
+            "Precision",
+            "Recall",
+            "F1-score",
+            "False positives",
+            "False negatives",
+        ]
+        st.dataframe(active_rounds[default_round_cols], use_container_width=True, hide_index=True)
+        with st.expander("Full active-learning rounds table"):
+            st.dataframe(active_rounds, use_container_width=True, hide_index=True)
+    _show_image(
+        CONFIG.paths.active_learning_curve_figure,
+        "Active-learning F1 curve, zoomed to show small changes near the top of the range.",
+        "python scripts/run_active_learning.py",
+    )
+    _show_image(
+        CONFIG.paths.active_learning_error_reduction_figure,
+        "False positives and false negatives across active-learning rounds.",
+        "python scripts/run_active_learning.py",
+    )
+    with st.expander("Extra learning metric"):
+        _show_image(CONFIG.paths.label_efficiency_curve_figure, "Label efficiency curve.", "python scripts/run_active_learning.py")
     if not random_vs_active.empty:
         with st.expander("Internal check only"):
             st.write(
@@ -455,12 +496,40 @@ def _final_evaluation() -> None:
         _show_missing(CONFIG.paths.final_research_evaluation, "python scripts/run_active_learning.py")
     else:
         st.markdown("### Central Final Research Evaluation")
-        st.dataframe(final_research, use_container_width=True)
-    left, right = st.columns(2)
-    with left:
-        _show_image(CONFIG.paths.final_research_evaluation_figure, "Final research evaluation comparison.", "python scripts/run_active_learning.py")
-    with right:
-        _show_image(CONFIG.paths.active_learning_curve_figure, "Active-learning improvement over review batches.", "python scripts/run_active_learning.py")
+        default_eval_cols = [
+            "Method",
+            "Precision",
+            "Recall",
+            "F1-score",
+            "Candidate pairs reviewed",
+            "Review workload percentage",
+        ]
+        st.dataframe(final_research[default_eval_cols], use_container_width=True, hide_index=True)
+        with st.expander("More details"):
+            detail_cols = [
+                "Method",
+                "Role",
+                "Dataset",
+                "False positives",
+                "False negatives",
+                "Estimated review time",
+                "Training labels used",
+                "Evaluation scope",
+                "Key interpretation",
+            ]
+            st.dataframe(final_research[detail_cols], use_container_width=True, hide_index=True)
+    st.markdown("### Accuracy Comparison")
+    _show_image(
+        CONFIG.paths.final_accuracy_comparison_figure,
+        "Accuracy metrics for the three final evaluation methods.",
+        "python scripts/run_active_learning.py",
+    )
+    st.markdown("### Review Workload Comparison")
+    _show_image(
+        CONFIG.paths.final_workload_comparison_figure,
+        "Human-only review checks all candidate pairs. HITL reviews only selected uncertain pairs.",
+        "python scripts/run_active_learning.py",
+    )
 
 
 def _threshold_analysis() -> None:
@@ -483,14 +552,13 @@ def _report_evidence() -> None:
         CONFIG.paths.final_research_evaluation,
         CONFIG.paths.active_learning_rounds,
         CONFIG.paths.active_learning_curve_figure,
-        CONFIG.paths.final_research_evaluation_figure,
+        CONFIG.paths.active_learning_error_reduction_figure,
+        CONFIG.paths.final_accuracy_comparison_figure,
+        CONFIG.paths.final_workload_comparison_figure,
         CONFIG.paths.dataset_profile,
         CONFIG.paths.blocking_summary,
-        CONFIG.paths.hyperparameter_tuning,
-        CONFIG.paths.evaluation_summary,
-        CONFIG.paths.scoring_method_summary,
         CONFIG.paths.active_learning_summary,
-        CONFIG.paths.hyperparameter_tuning_summary,
+        CONFIG.paths.limitations,
     ]
     rows = [{"Evidence file": str(path), "Available": "Yes" if path.exists() else "No"} for path in evidence]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -499,7 +567,6 @@ def _report_evidence() -> None:
         CONFIG.paths.evaluation_summary,
         CONFIG.paths.scoring_method_summary,
         CONFIG.paths.active_learning_summary,
-        CONFIG.paths.hyperparameter_tuning_summary,
         CONFIG.paths.limitations,
     ]:
         if path.exists():
@@ -557,8 +624,8 @@ def _sidebar() -> str:
                 "Final Evaluation",
                 "Field Evidence",
                 "ML Model Selection",
-                "Threshold Analysis",
                 "Evidence Files",
+                "Threshold Analysis",
             ],
         )
 
@@ -576,8 +643,8 @@ def main() -> None:
         "Final Evaluation": _final_evaluation,
         "Field Evidence": _field_evidence_page,
         "ML Model Selection": _model_performance,
-        "Threshold Analysis": _threshold_analysis,
         "Evidence Files": _report_evidence,
+        "Threshold Analysis": _threshold_analysis,
     }
     pages[page]()
 

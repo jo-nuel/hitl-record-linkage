@@ -60,6 +60,9 @@ class PathConfig:
     random_vs_active_learning_figure: Path = figures_dir / "random_vs_active_learning.png"
     label_efficiency_curve_figure: Path = figures_dir / "label_efficiency_curve.png"
     final_research_evaluation_figure: Path = figures_dir / "final_research_evaluation.png"
+    final_accuracy_comparison_figure: Path = figures_dir / "final_accuracy_comparison.png"
+    final_workload_comparison_figure: Path = figures_dir / "final_workload_comparison.png"
+    active_learning_error_reduction_figure: Path = figures_dir / "active_learning_error_reduction.png"
 
 
 @dataclass

@@ -263,7 +263,10 @@ The `outputs/reports/` files are generated technical summaries, not final academ
 - `outputs/figures/recall_vs_review_workload.png`
 - `outputs/figures/model_comparison_f1.png`
 - `outputs/figures/active_learning_curve.png`
+- `outputs/figures/active_learning_error_reduction.png`
 - `outputs/figures/label_efficiency_curve.png`
+- `outputs/figures/final_accuracy_comparison.png`
+- `outputs/figures/final_workload_comparison.png`
 - `outputs/figures/final_research_evaluation.png`
 
 ## Limitations

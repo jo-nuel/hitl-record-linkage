@@ -243,14 +243,22 @@ def _active_learning_loop(
     return pd.DataFrame(rows)
 
 
-def _line_chart(df: pd.DataFrame, path: Path, title: str, y_column: str, hue_column: str = "Strategy") -> None:
+def _line_chart(
+    df: pd.DataFrame,
+    path: Path,
+    title: str,
+    y_column: str,
+    hue_column: str = "Strategy",
+    y_min: float = 0.0,
+    y_max: float = 1.05,
+) -> None:
     plt.figure(figsize=(8, 5))
     for label, group in df.groupby(hue_column):
         plt.plot(group["Labelled pairs"], group[y_column], marker="o", label=label)
     plt.title(title)
     plt.xlabel("Labelled pairs used")
     plt.ylabel(y_column)
-    plt.ylim(0, 1.05)
+    plt.ylim(y_min, y_max)
     plt.grid(alpha=0.25)
     plt.legend()
     plt.tight_layout()
@@ -265,6 +273,58 @@ def _bar_chart(df: pd.DataFrame, path: Path) -> None:
     plt.xlabel("F1-score")
     plt.title("Model comparison by F1-score")
     plt.xlim(0, 1.05)
+    plt.tight_layout()
+    plt.savefig(path, dpi=160)
+    plt.close()
+
+
+def _final_accuracy_chart(df: pd.DataFrame, path: Path) -> None:
+    plt.figure(figsize=(8, 4.8))
+    x = np.arange(len(df))
+    width = 0.24
+    plt.bar(x - width, df["Precision"], width=width, label="Precision", color="#355C7D")
+    plt.bar(x, df["Recall"], width=width, label="Recall", color="#6C9A8B")
+    plt.bar(x + width, df["F1-score"], width=width, label="F1-score", color="#C06C84")
+    plt.xticks(x, df["Method"], rotation=20, ha="right")
+    plt.ylim(0.98, 1.005)
+    plt.ylabel("Metric value")
+    plt.title("Accuracy comparison")
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.savefig(path, dpi=160)
+    plt.close()
+
+
+def _final_workload_chart(df: pd.DataFrame, path: Path) -> None:
+    plt.figure(figsize=(8, 4.8))
+    bars = plt.bar(df["Method"], df["Candidate pairs reviewed"], color="#4C78A8")
+    plt.xticks(rotation=20, ha="right")
+    plt.ylabel("Pairs reviewed")
+    plt.title("Review workload comparison")
+    for bar, value in zip(bars, df["Candidate pairs reviewed"]):
+        plt.annotate(
+            f"{int(value):,}",
+            xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    plt.tight_layout()
+    plt.savefig(path, dpi=160)
+    plt.close()
+
+
+def _error_reduction_chart(df: pd.DataFrame, path: Path) -> None:
+    plt.figure(figsize=(8, 4.8))
+    plt.plot(df["Round"], df["False positives"], marker="o", label="False positives", color="#C06C84")
+    plt.plot(df["Round"], df["False negatives"], marker="o", label="False negatives", color="#355C7D")
+    plt.xlabel("Active-learning round")
+    plt.ylabel("Error count")
+    plt.title("Errors over active-learning rounds")
+    plt.grid(alpha=0.25)
+    plt.legend(frameon=False)
     plt.tight_layout()
     plt.savefig(path, dpi=160)
     plt.close()
@@ -512,7 +572,15 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
     save_csv(random_vs_active, CONFIG.paths.random_vs_active_learning)
     save_csv(final_research, CONFIG.paths.final_research_evaluation)
     _bar_chart(comparison, CONFIG.paths.model_comparison_f1_figure)
-    _line_chart(active_rounds, CONFIG.paths.active_learning_curve_figure, "Active learning F1 over review rounds", "F1-score")
+    _line_chart(
+        active_rounds,
+        CONFIG.paths.active_learning_curve_figure,
+        "Active learning F1 over review rounds",
+        "F1-score",
+        y_min=0.99,
+        y_max=1.001,
+    )
+    _error_reduction_chart(active_rounds, CONFIG.paths.active_learning_error_reduction_figure)
     _line_chart(
         random_vs_active,
         CONFIG.paths.random_vs_active_learning_figure,
@@ -526,6 +594,8 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "Recall",
     )
     _final_research_chart(final_research, CONFIG.paths.final_research_evaluation_figure)
+    _final_accuracy_chart(final_research, CONFIG.paths.final_accuracy_comparison_figure)
+    _final_workload_chart(final_research, CONFIG.paths.final_workload_comparison_figure)
     _write_summary(active_rounds, comparison, final_research, tuning)
     _write_tuning_summary(tuning)
     return {
