@@ -184,7 +184,6 @@ def _field_evidence_from_pair(pair: pd.Series) -> pd.DataFrame:
         ("State", "state", "state_exact"),
         ("Postcode", "postcode", "postcode_exact"),
         ("Sex/Gender", "sex", "sex_exact"),
-        ("Available identifier", "identifier", ""),
     ]
     rows = []
     for label, field, score_col in field_map:
@@ -338,19 +337,19 @@ def _human_review_queue() -> None:
     st.markdown("### Current Pair")
     m1, m2, m3 = st.columns(3)
     m1.metric("Model probability / score", f"{float(pair.get('model_score', 0.0)):.3f}")
-    m2.metric("Hybrid EMPI score", f"{float(pair.get('hybrid_empi_score', 0.0)):.3f}")
+    m2.metric("Evidence score", f"{float(pair.get('hybrid_empi_score', 0.0)):.3f}")
     m3.metric("Current decision", pair.get("model_decision", "Needs Human Review"))
-    st.warning(pair.get("decision_reason", "Sent to review because the pair is in the uncertainty band."))
+    st.warning("This pair is in the uncertainty band, so it is sent for human review.")
     _pair_viewer(pair)
 
-    notes = st.text_area("Reviewer notes")
+    st.write("Review the field evidence, then choose whether the records refer to the same person.")
     a, b, c = st.columns(3)
     if a.button("Confirm Match", type="primary", use_container_width=True):
         updated = upsert_review_decision(
             decisions,
             pair,
             "Confirm Match",
-            notes,
+            st.session_state.get("reviewer_notes", ""),
             CONFIG.matcher.lower_threshold,
             CONFIG.matcher.upper_threshold,
         )
@@ -361,7 +360,7 @@ def _human_review_queue() -> None:
             decisions,
             pair,
             "Reject Match",
-            notes,
+            st.session_state.get("reviewer_notes", ""),
             CONFIG.matcher.lower_threshold,
             CONFIG.matcher.upper_threshold,
         )
@@ -372,12 +371,13 @@ def _human_review_queue() -> None:
             decisions,
             pair,
             "Skip",
-            notes,
+            st.session_state.get("reviewer_notes", ""),
             CONFIG.matcher.lower_threshold,
             CONFIG.matcher.upper_threshold,
         )
         save_review_decisions(updated, CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
         st.rerun()
+    st.text_area("Reviewer notes", key="reviewer_notes")
 
 
 def _model_performance() -> None:
@@ -564,8 +564,8 @@ def _sidebar() -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="AI-Assisted Active Learning HITL Record Linkage", layout="wide")
-    st.title("AI-Assisted Active Learning HITL Record Linkage")
+    st.set_page_config(page_title="Active Learning Record Linkage Demo", layout="wide")
+    st.title("Active Learning Record Linkage Demo")
     st.caption("FEBRL4 benchmark data, EMPI-inspired evidence, uncertainty sampling, human review, and batch retraining.")
     page = _sidebar()
     pages = {
