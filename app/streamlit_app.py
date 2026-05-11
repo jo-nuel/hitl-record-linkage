@@ -428,11 +428,9 @@ def _model_performance() -> None:
 def _learning_curves() -> None:
     st.header("Learning Curves")
     st.write(
-        "Round 0 uses seed labels only. Each later round adds a batch of simulated reviewer labels, retrains the model, "
-        "and evaluates on the frozen test set."
+        "Round 0 uses seed labels only. Each later round adds simulated reviewer labels and retrains the model."
     )
     active_rounds = _load(CONFIG.paths.active_learning_rounds)
-    random_vs_active = _load(CONFIG.paths.random_vs_active_learning)
     if active_rounds.empty:
         _show_missing(CONFIG.paths.active_learning_rounds, "python scripts/run_active_learning.py")
     else:
@@ -457,28 +455,15 @@ def _learning_curves() -> None:
         with st.expander("Full active-learning rounds table"):
             st.dataframe(active_rounds, use_container_width=True, hide_index=True)
     _show_image(
-        CONFIG.paths.active_learning_curve_figure,
-        "Active-learning F1 curve, zoomed to show small changes near the top of the range.",
-        "python scripts/run_active_learning.py",
-    )
-    _show_image(
         CONFIG.paths.active_learning_error_reduction_figure,
         "False positives and false negatives across active-learning rounds.",
         "python scripts/run_active_learning.py",
     )
-    with st.expander("Extra learning metric"):
-        _show_image(CONFIG.paths.label_efficiency_curve_figure, "Label efficiency curve.", "python scripts/run_active_learning.py")
-    if not random_vs_active.empty:
-        with st.expander("Internal check only"):
-            st.write(
-                "This was used during development and is not part of the final report evaluation."
-            )
-            st.dataframe(random_vs_active, use_container_width=True)
-            _show_image(
-                CONFIG.paths.random_vs_active_learning_figure,
-                "Internal exploratory comparison: active learning vs random sampling.",
-                "python scripts/run_active_learning.py",
-            )
+    _show_image(
+        CONFIG.paths.active_learning_curve_figure,
+        "Active-learning F1 curve, zoomed to show small changes near the top of the range.",
+        "python scripts/run_active_learning.py",
+    )
 
 
 def _final_evaluation() -> None:
