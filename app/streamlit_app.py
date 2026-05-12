@@ -82,31 +82,12 @@ def _metric_value(df: pd.DataFrame, column: str, default: str = "n/a") -> str:
         return str(value)
 
 
-def _top_metric_cards() -> None:
-    df_a = _load(CONFIG.paths.febrl_a, dtype=str)
-    df_b = _load(CONFIG.paths.febrl_b, dtype=str)
-    true_links = _load(CONFIG.paths.true_links, dtype=str)
-    blocking = _load(CONFIG.paths.blocking_stats)
-    active_rounds = _load(CONFIG.paths.active_learning_rounds)
+def _final_method_row(method: str) -> pd.Series | None:
     final_eval = _load(CONFIG.paths.final_research_evaluation)
-
-    columns = st.columns(7)
-    columns[0].metric("Dataset", "FEBRL4")
-    columns[1].metric("Records A", f"{len(df_a):,}" if not df_a.empty else "n/a")
-    columns[2].metric("Records B", f"{len(df_b):,}" if not df_b.empty else "n/a")
-    columns[3].metric("True links", f"{len(true_links):,}" if not true_links.empty else "n/a")
-    columns[4].metric("Candidate pairs", _metric_value(blocking, "candidate_pairs"))
-    if not blocking.empty and "blocking_recall" in blocking.columns:
-        columns[5].metric("Blocking recall", f"{float(blocking.iloc[0]['blocking_recall']) * 100:.1f}%")
-    else:
-        columns[5].metric("Blocking recall", "n/a")
-    if not active_rounds.empty and "F1-score" in active_rounds.columns:
-        columns[6].metric("Active-learning best F1", f"{active_rounds['F1-score'].max():.3f}")
-    elif not final_eval.empty and "Method" in final_eval.columns:
-        hitl = final_eval[final_eval["Method"] == "AI + HITL Active Learning Matcher"]
-        columns[6].metric("Active-learning F1", f"{float(hitl.iloc[0]['F1-score']):.3f}" if not hitl.empty else "n/a")
-    else:
-        columns[6].metric("Best F1", "n/a")
+    if final_eval.empty or "Method" not in final_eval.columns:
+        return None
+    rows = final_eval[final_eval["Method"] == method]
+    return None if rows.empty else rows.iloc[0]
 
 
 def _section_note(text: str) -> None:
@@ -120,20 +101,29 @@ def _workflow_cards(items: list[str]) -> None:
 
 
 def _overview() -> None:
-    st.header("Overview")
-    st.subheader("AI-Assisted Active Learning HITL Record Linkage using FEBRL4")
+    st.header("Pitch Overview")
+    st.subheader("AI-assisted duplicate record detection with human review")
     st.write(
-        "This prototype tests whether an AI-assisted HITL workflow can reduce manual review while keeping uncertain "
-        "record matches under human review."
-    )
-    st.info(
-        "Final method: an ML matcher predicts match probability, uncertain pairs are reviewed, simulated reviewer labels "
-        "are added to training data, and the classifier retrains in batches."
+        "This prototype uses machine learning and active learning to detect duplicate patient records, while sending "
+        "uncertain cases to human review."
     )
     _section_note(
-        "FEBRL4 is benchmark data, not real hospital data. Formal reviewer labels are simulated from FEBRL ground truth for reproducible evaluation."
+        "This is a reproducible research prototype using FEBRL4 benchmark data. It is not a production hospital system."
     )
-    _top_metric_cards()
+    blocking = _load(CONFIG.paths.blocking_stats)
+    hitl = _final_method_row("AI + HITL Active Learning Matcher")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Dataset", "FEBRL4")
+    c2.metric("Candidate pairs", _metric_value(blocking, "candidate_pairs"))
+    if hitl is not None:
+        workload = float(hitl.get("Review workload percentage", 0.0))
+        c3.metric("AI + HITL F1-score", f"{float(hitl.get('F1-score', 0.0)):.3f}")
+        c4.metric("Reviewed pairs", f"{int(hitl.get('Candidate pairs reviewed', 0)):,}")
+        c5.metric("Workload reduction", f"{100.0 - workload:.2f}%")
+    else:
+        c3.metric("AI + HITL F1-score", "n/a")
+        c4.metric("Reviewed pairs", "n/a")
+        c5.metric("Workload reduction", "n/a")
     st.markdown("### Demo Workflow")
     _workflow_cards(
         [
@@ -149,13 +139,14 @@ def _overview() -> None:
 
 
 def _dataset_and_blocking() -> None:
-    st.header("Dataset & Blocking")
+    st.header("Data & Blocking")
     st.write(
-        "Blocking reduces the number of pairs the system needs to compare, but it can still miss some true links before matching begins."
+        "Blocking reduces the number of record pairs before matching. This makes the problem small enough to evaluate, "
+        "but some true links can still be missed at this stage."
     )
     profile = _read_markdown(CONFIG.paths.dataset_profile)
     if profile:
-        with st.expander("FEBRL4 dataset profile", expanded=True):
+        with st.expander("FEBRL4 dataset profile"):
             st.markdown(profile)
     else:
         _show_missing(CONFIG.paths.dataset_profile, "python scripts/run_pipeline.py --review-mode simulate")
@@ -165,17 +156,15 @@ def _dataset_and_blocking() -> None:
         _show_missing(CONFIG.paths.blocking_stats, "python scripts/run_pipeline.py --review-mode simulate")
     else:
         st.markdown("### Key Blocking Results")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total possible pairs", _metric_value(blocking, "total_possible_pairs"))
-        c2.metric("Candidate pairs", _metric_value(blocking, "candidate_pairs"))
-        c3.metric("Reduction ratio", f"{float(blocking.iloc[0]['reduction_ratio']) * 100:.2f}%")
-        c4, c5, c6 = st.columns(3)
-        c4.metric("True links retained", _metric_value(blocking, "true_links_retained"))
-        c5.metric("True links missed", _metric_value(blocking, "true_links_missed"))
-        c6.metric("Blocking recall", f"{float(blocking.iloc[0]['blocking_recall']) * 100:.2f}%")
+        c2.metric("Candidate pairs after blocking", _metric_value(blocking, "candidate_pairs"))
+        c3.metric("Blocking recall", f"{float(blocking.iloc[0]['blocking_recall']) * 100:.2f}%")
+        c4.metric("Missed true links", _metric_value(blocking, "true_links_missed"))
         with st.expander("Full blocking table"):
             st.dataframe(blocking, use_container_width=True)
-    _show_image(CONFIG.paths.resolution_flow_figure, "Candidate-pair resolution flow.")
+        with st.expander("Candidate-pair resolution flow"):
+            _show_image(CONFIG.paths.resolution_flow_figure, "Candidate-pair resolution flow.")
 
 
 def _field_evidence_from_pair(pair: pd.Series) -> pd.DataFrame:
@@ -260,7 +249,7 @@ def _field_evidence_page() -> None:
 
 
 def _active_learning_workflow() -> None:
-    st.header("Active Learning Workflow")
+    st.header("Active Learning Details")
     st.write(
         "Active learning focuses reviewer effort on uncertain pairs near the classifier decision boundary. "
         "After each review batch, the new labels are added to the training set and the classifier is retrained."
@@ -310,10 +299,10 @@ def _active_learning_workflow() -> None:
 
 
 def _human_review_queue() -> None:
-    st.header("Human Review Queue")
-    st.caption("Review one uncertain candidate pair at a time. Skip does not finalise the pair. It leaves the pair unresolved.")
+    st.header("Human Review Demo")
+    st.caption("Review one uncertain candidate pair at a time. Skip / Defer leaves the pair unresolved.")
     st.info(
-        "Live review decisions are stored for demo and audit use only. Formal benchmark results use simulated reviewer labels."
+        "Live review decisions are stored for demo and audit use only. Formal benchmark metrics use simulated reviewer labels from FEBRL4."
     )
     queue = _load(CONFIG.paths.review_queue, dtype=str)
     decisions = load_review_decisions(CONFIG.paths.review_decisions)
@@ -348,6 +337,7 @@ def _human_review_queue() -> None:
     _pair_viewer(pair)
 
     st.write("Review the field evidence, then choose whether the records refer to the same person.")
+    st.caption("Confirm and Reject save a decision and move to the next pair. Skip / Defer keeps the pair open for later review.")
     a, b, c = st.columns(3)
     if a.button("Confirm Match", type="primary", use_container_width=True):
         updated = upsert_review_decision(
@@ -371,7 +361,7 @@ def _human_review_queue() -> None:
         )
         save_review_decisions(updated, CONFIG.paths.review_decisions, CONFIG.paths.review_decisions_export)
         st.rerun()
-    if c.button("Skip", use_container_width=True):
+    if c.button("Skip / Defer", use_container_width=True):
         updated = upsert_review_decision(
             decisions,
             pair,
@@ -426,7 +416,7 @@ def _model_performance() -> None:
 
 
 def _learning_curves() -> None:
-    st.header("Learning Curves")
+    st.header("Learning Progress")
     st.write(
         "Round 0 uses seed labels only. Each later round adds simulated reviewer labels and retrains the model."
     )
@@ -455,22 +445,23 @@ def _learning_curves() -> None:
         with st.expander("Full active-learning rounds table"):
             st.dataframe(active_rounds, use_container_width=True, hide_index=True)
     _show_image(
-        CONFIG.paths.active_learning_error_reduction_figure,
-        "False positives and false negatives across active-learning rounds.",
-        "python scripts/run_active_learning.py",
-    )
-    _show_image(
         CONFIG.paths.active_learning_curve_figure,
-        "Active-learning F1 curve, zoomed to show small changes near the top of the range.",
+        "Active-learning F1 curve. The y-axis is zoomed because the scores are close together.",
         "python scripts/run_active_learning.py",
     )
+    with st.expander("Error details"):
+        _show_image(
+            CONFIG.paths.active_learning_error_reduction_figure,
+            "False positives and false negatives across active-learning rounds.",
+            "python scripts/run_active_learning.py",
+        )
 
 
 def _final_evaluation() -> None:
-    st.header("Final Evaluation")
+    st.header("Final Results")
+    st.subheader("AI + HITL achieved near-clerical-review accuracy with far lower review workload.")
     st.write(
-        "The final report-facing comparison contains only three methods: Human-only Clerical Review Baseline, "
-        "AI-only ML Matcher, and AI + HITL Active Learning Matcher."
+        "The final comparison focuses on human-only review, AI-only matching, and the proposed AI + HITL active-learning matcher."
     )
     st.info(
         "Scope note: the human-only baseline estimates the workload of reviewing all blocked candidate pairs. "
@@ -480,16 +471,23 @@ def _final_evaluation() -> None:
     if final_research.empty:
         _show_missing(CONFIG.paths.final_research_evaluation, "python scripts/run_active_learning.py")
     else:
-        st.markdown("### Central Final Research Evaluation")
+        st.markdown("### Final Research Evaluation")
+        table = final_research.copy()
+        table = table.rename(
+            columns={
+                "Candidate pairs reviewed": "Reviewed pairs",
+                "Key interpretation": "Interpretation",
+            }
+        )
         default_eval_cols = [
             "Method",
             "Precision",
             "Recall",
             "F1-score",
-            "Candidate pairs reviewed",
-            "Review workload percentage",
+            "Reviewed pairs",
+            "Interpretation",
         ]
-        st.dataframe(final_research[default_eval_cols], use_container_width=True, hide_index=True)
+        st.dataframe(table[default_eval_cols], use_container_width=True, hide_index=True)
         with st.expander("More details"):
             detail_cols = [
                 "Method",
@@ -503,18 +501,18 @@ def _final_evaluation() -> None:
                 "Key interpretation",
             ]
             st.dataframe(final_research[detail_cols], use_container_width=True, hide_index=True)
-    st.markdown("### Accuracy Comparison")
-    _show_image(
-        CONFIG.paths.final_accuracy_comparison_figure,
-        "Accuracy metrics for the three final evaluation methods.",
-        "python scripts/run_active_learning.py",
-    )
     st.markdown("### Review Workload Comparison")
     _show_image(
         CONFIG.paths.final_workload_comparison_figure,
         "Human-only review checks all candidate pairs. HITL reviews only selected uncertain pairs.",
         "python scripts/run_active_learning.py",
     )
+    with st.expander("Accuracy chart"):
+        _show_image(
+            CONFIG.paths.final_accuracy_comparison_figure,
+            "Precision, recall, and F1-score for the three final methods.",
+            "python scripts/run_active_learning.py",
+        )
 
 
 def _threshold_analysis() -> None:
@@ -599,14 +597,22 @@ def _sidebar() -> str:
                 st.cache_data.clear()
                 st.rerun()
 
+        nav_mode = st.radio("Navigation", ["Presentation Mode", "Technical Appendix"])
+        if nav_mode == "Presentation Mode":
+            return st.radio(
+                "Demo pages",
+                [
+                    "Pitch Overview",
+                    "Data & Blocking",
+                    "Human Review Demo",
+                    "Learning Progress",
+                    "Final Results",
+                ],
+            )
         return st.radio(
-            "Pages",
+            "Appendix pages",
             [
-                "Overview",
-                "Dataset & Blocking",
-                "Human Review Queue",
-                "Learning Curves",
-                "Final Evaluation",
+                "Active Learning Details",
                 "Field Evidence",
                 "ML Model Selection",
                 "Evidence Files",
@@ -621,11 +627,12 @@ def main() -> None:
     st.caption("FEBRL4 benchmark data, EMPI-inspired evidence, uncertainty sampling, human review, and batch retraining.")
     page = _sidebar()
     pages = {
-        "Overview": _overview,
-        "Dataset & Blocking": _dataset_and_blocking,
-        "Human Review Queue": _human_review_queue,
-        "Learning Curves": _learning_curves,
-        "Final Evaluation": _final_evaluation,
+        "Pitch Overview": _overview,
+        "Data & Blocking": _dataset_and_blocking,
+        "Human Review Demo": _human_review_queue,
+        "Learning Progress": _learning_curves,
+        "Final Results": _final_evaluation,
+        "Active Learning Details": _active_learning_workflow,
         "Field Evidence": _field_evidence_page,
         "ML Model Selection": _model_performance,
         "Evidence Files": _report_evidence,
