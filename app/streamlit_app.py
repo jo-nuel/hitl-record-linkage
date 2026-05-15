@@ -21,15 +21,6 @@ from src.evaluation.active_learning import run_active_learning_experiment  # noq
 from src.utils.config import CONFIG  # noqa: E402
 
 
-MODEL_OPTIONS = [
-    "Hybrid EMPI Score",
-    "Logistic Regression",
-    "Random Forest",
-    "Gradient Boosting",
-    "Best available model",
-]
-
-
 def _read_csv(path: Path, dtype: str | None = None) -> pd.DataFrame:
     # Load a CSV output if it exists; otherwise return an empty table.
     if not path.exists():
@@ -330,10 +321,10 @@ def _human_review_queue() -> None:
     st.markdown("### Current Pair")
     m1, m2, m3 = st.columns(3)
     m1.metric("ML match probability", f"{float(pair.get('model_score', 0.0)):.3f}")
-    m2.metric("Evidence score", f"{float(pair.get('hybrid_empi_score', 0.0)):.3f}")
-    m3.metric("Current decision", pair.get("model_decision", "Needs Human Review"))
-    st.caption("Evidence score is a rule-based support score from field agreement.")
-    st.warning("This pair is in the uncertainty band, so it is sent for human review.")
+    m2.metric("Field evidence score", f"{float(pair.get('hybrid_empi_score', 0.0)):.3f}")
+    m3.metric("Review reason", "Model uncertainty")
+    st.caption("Field evidence score is a rule-based support score from field agreement.")
+    st.warning("This pair is selected for review because the model is uncertain.")
     _pair_viewer(pair)
 
     st.write("Review the field evidence, then choose whether the records refer to the same person.")
@@ -378,8 +369,7 @@ def _human_review_queue() -> None:
 def _model_performance() -> None:
     st.header("ML Model Selection")
     st.write(
-        "This page shows that the selected ML matcher was chosen through simple tuning, not guessed. "
-        "Hybrid EMPI is kept as a fallback and explanation score, not as a final evaluation method."
+        "This page shows that the selected ML matcher was chosen through simple tuning, not guessed."
     )
     tuning = _load(CONFIG.paths.hyperparameter_tuning)
     if tuning.empty:
@@ -400,25 +390,20 @@ def _model_performance() -> None:
         _show_missing(CONFIG.paths.model_comparison, "python scripts/run_active_learning.py")
     else:
         st.markdown("### Frozen Test-Set ML Check")
-        ml_comparison = comparison[comparison["Method"] != "Hybrid EMPI Score"].copy()
         metric_cols = ["Method", "Precision", "Recall", "F1-score", "False positives", "False negatives"]
-        st.dataframe(ml_comparison[metric_cols], use_container_width=True, hide_index=True)
-        ml_only = comparison[comparison["Method"] != "Hybrid EMPI Score"]
-        best = ml_only.sort_values("F1-score", ascending=False).iloc[0] if not ml_only.empty else comparison.iloc[0]
+        st.dataframe(comparison[metric_cols], use_container_width=True, hide_index=True)
+        best = comparison.sort_values("F1-score", ascending=False).iloc[0]
         c1, c2, c3 = st.columns(3)
         c1.metric("Best test-set ML", best["Method"])
         c2.metric("Best F1", f"{float(best['F1-score']):.3f}")
         c3.metric("Best recall", f"{float(best['Recall']):.3f}")
-        with st.expander("Internal fallback/evidence score"):
-            st.write("Hybrid EMPI is kept as a fallback/evidence score, not as a final evaluation method.")
-            st.dataframe(comparison, use_container_width=True, hide_index=True)
     _show_image(CONFIG.paths.model_comparison_f1_figure, "Model comparison by F1-score.", "python scripts/run_active_learning.py")
 
 
 def _learning_curves() -> None:
     st.header("Learning Progress")
     st.write(
-        "Round 0 uses seed labels only. Each later round adds simulated reviewer labels and retrains the model."
+        "Round 0 uses seed labels only. Each later round selects uncertain pairs near p(match)=0.5, adds simulated reviewer labels, and retrains the model."
     )
     active_rounds = _load(CONFIG.paths.active_learning_rounds)
     if active_rounds.empty:
@@ -515,19 +500,6 @@ def _final_evaluation() -> None:
         )
 
 
-def _threshold_analysis() -> None:
-    st.header("Threshold Analysis")
-    st.write("Thresholds control which pairs are resolved automatically and which pairs enter grey-zone review.")
-    sweep = _load(CONFIG.paths.threshold_sweep)
-    if sweep.empty:
-        _show_missing(CONFIG.paths.threshold_sweep, "python scripts/run_threshold_sweep.py")
-    else:
-        st.dataframe(sweep, use_container_width=True)
-    _show_image(CONFIG.paths.threshold_f1_figure, "Threshold vs F1-score.", "python scripts/run_threshold_sweep.py")
-    _show_image(CONFIG.paths.threshold_workload_figure, "Threshold vs review workload.", "python scripts/run_threshold_sweep.py")
-    _show_image(CONFIG.paths.recall_workload_figure, "Recall vs review workload.", "python scripts/run_threshold_sweep.py")
-
-
 def _report_evidence() -> None:
     st.header("Evidence Files")
     st.write("These are the main generated files to use as report evidence.")
@@ -567,23 +539,19 @@ def _sidebar() -> str:
 
         # Demo controls are hidden so presentation users do not change experiment settings by accident.
         with st.expander("Advanced settings"):
-            scoring_method = st.selectbox("Scoring method", MODEL_OPTIONS)
             review_mode = st.selectbox("Review mode", ["simulate", "merge", "ignore"])
             st.caption("simulate: uses FEBRL ground truth to simulate reviewer labels.")
             st.caption("merge: uses saved live review decisions where available.")
             st.caption("ignore: shows automated decisions without applying review decisions.")
-            lower = st.slider("Lower threshold", 0.0, 1.0, CONFIG.matcher.lower_threshold, 0.05)
-            upper = st.slider("Upper threshold", 0.0, 1.0, CONFIG.matcher.upper_threshold, 0.05)
             batch_size = st.number_input("Active-learning batch size", min_value=1, value=CONFIG.active_learning.batch_size)
             rounds = st.number_input("Active-learning rounds", min_value=1, value=CONFIG.active_learning.rounds)
             random_state = st.number_input("Random state", min_value=0, value=CONFIG.active_learning.random_state)
             CONFIG.active_learning.batch_size = int(batch_size)
             CONFIG.active_learning.rounds = int(rounds)
             CONFIG.active_learning.random_state = int(random_state)
-            st.caption(f"Selected scoring method for demo context: {scoring_method}")
             if st.button("Run FEBRL pipeline", type="primary", use_container_width=True):
-                with st.spinner("Running FEBRL EMPI pipeline..."):
-                    run_experiment(review_mode, lower, upper)
+                with st.spinner("Running FEBRL linkage pipeline..."):
+                    run_experiment(review_mode, CONFIG.matcher.lower_threshold, CONFIG.matcher.upper_threshold)
                 st.cache_data.clear()
                 st.success("Pipeline complete.")
             if st.button("Run active-learning experiment", use_container_width=True):
@@ -616,7 +584,6 @@ def _sidebar() -> str:
                 "Field Evidence",
                 "ML Model Selection",
                 "Evidence Files",
-                "Threshold Analysis",
             ],
         )
 
@@ -624,7 +591,7 @@ def _sidebar() -> str:
 def main() -> None:
     st.set_page_config(page_title="Active Learning Record Linkage Demo", layout="wide")
     st.title("Active Learning Record Linkage Demo")
-    st.caption("FEBRL4 benchmark data, EMPI-inspired evidence, uncertainty sampling, human review, and batch retraining.")
+    st.caption("FEBRL4 benchmark data, field-level evidence, uncertainty sampling, human review, and batch retraining.")
     page = _sidebar()
     pages = {
         "Pitch Overview": _overview,
@@ -636,7 +603,6 @@ def main() -> None:
         "Field Evidence": _field_evidence_page,
         "ML Model Selection": _model_performance,
         "Evidence Files": _report_evidence,
-        "Threshold Analysis": _threshold_analysis,
     }
     pages[page]()
 

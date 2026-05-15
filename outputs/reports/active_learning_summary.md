@@ -45,8 +45,8 @@ Model hyperparameters are tuned with `GridSearchCV` on the initial active-learni
 
 ## Interpretation
 
-The EMPI-inspired pipeline provides the healthcare-style record linkage structure: preprocessing, blocking, field-level comparison, threshold decisions, and human review.
+The final method uses FEBRL4, preprocessing, blocking, field-level comparison features, ML match probability, uncertainty sampling, simulated reviewer labels, and batch retraining.
 
-The Hybrid EMPI Score is retained as a transparent non-ML baseline and fallback scoring method. It is not presented as the main AI model.
+Uncertain pairs are selected for review because their predicted match probability is close to 0.5. The simulated reviewer label is then added to the training set before the next round.
 
-The Active Learning ML Matcher is the main proposed method because it uses simulated professional reviewer labels to improve future predictions over training rounds. The final report-facing evaluation is limited to Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.
+The final report-facing evaluation is limited to Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.

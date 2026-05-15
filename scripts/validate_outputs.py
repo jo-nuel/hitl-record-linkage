@@ -14,9 +14,7 @@ from src.utils.config import CONFIG  # noqa: E402
 
 
 REQUIRED_OUTPUTS = [
-    CONFIG.paths.final_evaluation_comparison,
     CONFIG.paths.final_research_evaluation,
-    CONFIG.paths.threshold_sweep,
     CONFIG.paths.model_comparison,
     CONFIG.paths.hyperparameter_tuning,
     CONFIG.paths.active_learning_rounds,
@@ -28,30 +26,14 @@ REQUIRED_OUTPUTS = [
     CONFIG.paths.evaluation_summary,
     CONFIG.paths.dataset_profile,
     CONFIG.paths.blocking_summary,
-    CONFIG.paths.scoring_method_summary,
     CONFIG.paths.active_learning_summary,
     CONFIG.paths.hyperparameter_tuning_summary,
-    CONFIG.paths.benchmark_figure,
-    CONFIG.paths.workload_figure,
-    CONFIG.paths.workload_percentage_figure,
-    CONFIG.paths.threshold_f1_figure,
-    CONFIG.paths.threshold_workload_figure,
-    CONFIG.paths.recall_workload_figure,
     CONFIG.paths.model_comparison_f1_figure,
     CONFIG.paths.active_learning_curve_figure,
     CONFIG.paths.active_learning_error_reduction_figure,
-    CONFIG.paths.label_efficiency_curve_figure,
     CONFIG.paths.final_accuracy_comparison_figure,
     CONFIG.paths.final_workload_comparison_figure,
-    CONFIG.paths.final_research_evaluation_figure,
 ]
-
-
-EXPECTED_METHODS = {
-    "Human-only Clerical Review Baseline",
-    "AI-only EMPI Matcher",
-    "AI + HITL Grey-Zone Review",
-}
 
 EXPECTED_FINAL_RESEARCH_METHODS = {
     "Human-only Clerical Review Baseline",
@@ -83,22 +65,6 @@ def _failures_for_files() -> list[str]:
     return [f"Missing required output: {path}" for path in REQUIRED_OUTPUTS if not path.exists()]
 
 
-def _validate_final_comparison() -> list[str]:
-    df = pd.read_csv(CONFIG.paths.final_evaluation_comparison)
-    failures: list[str] = []
-    methods = set(df["Method"]) if "Method" in df.columns else set()
-    if methods != EXPECTED_METHODS:
-        failures.append(f"final_evaluation_comparison.csv methods are {sorted(methods)}, expected {sorted(EXPECTED_METHODS)}")
-    missing_columns = REQUIRED_METRIC_COLUMNS - set(df.columns)
-    if missing_columns:
-        failures.append(f"final_evaluation_comparison.csv missing columns: {sorted(missing_columns)}")
-    if len(df) != 3:
-        failures.append("final_evaluation_comparison.csv must contain exactly three rows")
-    if not failures:
-        _pass("final evaluation comparison has the expected three methods and metric columns")
-    return failures
-
-
 def _validate_final_research_evaluation() -> list[str]:
     df = pd.read_csv(CONFIG.paths.final_research_evaluation)
     failures: list[str] = []
@@ -123,18 +89,10 @@ def _validate_final_research_evaluation() -> list[str]:
         "AI + HITL Active Learning Matcher",
     ]
     if "Method" in df.columns and df["Method"].to_list() != expected_order:
-        failures.append("final_research_evaluation.csv should list primary methods before supporting baselines")
+        failures.append("final_research_evaluation.csv should list the three final methods in report order")
     if not failures:
         _pass("final research evaluation has the expected three report-facing methods")
     return failures
-
-
-def _validate_threshold_sweep() -> list[str]:
-    df = pd.read_csv(CONFIG.paths.threshold_sweep)
-    if df.empty:
-        return ["threshold_sweep.csv has no rows"]
-    _pass("threshold sweep has rows")
-    return []
 
 
 def _validate_active_learning_outputs() -> list[str]:
@@ -142,9 +100,9 @@ def _validate_active_learning_outputs() -> list[str]:
     model_comparison = pd.read_csv(CONFIG.paths.model_comparison)
     tuning = pd.read_csv(CONFIG.paths.hyperparameter_tuning)
     rounds = pd.read_csv(CONFIG.paths.active_learning_rounds)
-    expected_models = {"Hybrid EMPI Score", "Logistic Regression", "Random Forest", "Gradient Boosting"}
+    expected_models = {"Logistic Regression", "Random Forest", "Gradient Boosting"}
     if set(model_comparison.get("Method", [])) != expected_models:
-        failures.append("model_comparison.csv must contain Hybrid EMPI Score, Logistic Regression, Random Forest, and Gradient Boosting")
+        failures.append("model_comparison.csv must contain Logistic Regression, Random Forest, and Gradient Boosting")
     required_tuning_columns = {"Method", "Best CV F1-score", "Best parameters", "Tuning runtime seconds", "Selection note"}
     missing_tuning_columns = required_tuning_columns - set(tuning.columns)
     if missing_tuning_columns:
@@ -180,10 +138,6 @@ def _validate_active_learning_outputs() -> list[str]:
             failures.append("Round 0 must be the seed-only model with New labels added = 0")
     if not failures:
         _pass("active-learning model comparison and learning-curve outputs are present")
-    if CONFIG.paths.random_vs_active_learning.exists():
-        _warn("random_vs_active_learning.csv exists as an internal exploratory output and is not part of final evaluation")
-    if CONFIG.paths.random_vs_active_learning_figure.exists():
-        _warn("random_vs_active_learning.png exists as an internal exploratory figure and is not part of final evaluation")
     return failures
 
 
@@ -210,7 +164,7 @@ def _validate_config_and_blocking() -> list[str]:
     failures: list[str] = []
     try:
         CONFIG.validate()
-        _pass("configuration thresholds are valid")
+        _pass("configuration values are valid")
     except ValueError as error:
         failures.append(str(error))
 
@@ -228,8 +182,8 @@ def _validate_readme_framing() -> list[str]:
     readme_path = REPO_ROOT / "README.md"
     text = readme_path.read_text(encoding="utf-8").lower()
     failures: list[str] = []
-    if "ai-assisted active learning hitl record linkage using febrl4" not in text:
-        failures.append("README must name the final method as AI-Assisted Active Learning HITL Record Linkage using FEBRL4")
+    if "ai-assisted active learning record linkage using febrl4" not in text:
+        failures.append("README must name the final method as AI-assisted active learning record linkage using FEBRL4")
     if "synthea is the final" in text or "final dataset: synthea" in text or "final method uses synthea" in text:
         failures.append("README must not describe Synthea as the final dataset or final method")
     forbidden_active_learning_phrases = [
@@ -242,11 +196,15 @@ def _validate_readme_framing() -> list[str]:
         if phrase in text:
             failures.append(f"README should not frame active learning as a side feature: '{phrase}'")
     forbidden_final_method_phrases = [
-        "random sampling hitl baseline",
-        "hybrid empi baseline",
+        "empi-inspired hitl workflow",
+        "hybrid empi",
+        "ecm",
+        "threshold sweep",
+        "run threshold",
         "supporting baselines",
         "five-method",
         "five methods",
+        "random sampling hitl baseline",
     ]
     for phrase in forbidden_final_method_phrases:
         if phrase in text:
@@ -282,9 +240,7 @@ def main() -> None:
             print(f"FAIL: {failure}")
         raise SystemExit(1)
 
-    failures.extend(_validate_final_comparison())
     failures.extend(_validate_final_research_evaluation())
-    failures.extend(_validate_threshold_sweep())
     failures.extend(_validate_active_learning_outputs())
     failures.extend(_validate_review_queue())
     failures.extend(_validate_public_pair_exports())

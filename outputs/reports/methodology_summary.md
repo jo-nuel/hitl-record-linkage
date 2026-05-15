@@ -1,3 +1,11 @@
 # Methodology Summary
 
-The final method is AI-Assisted Active Learning HITL Record Linkage using FEBRL4. The workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares fields with Jaro-Winkler and exact agreement, trains ML classifiers on field-level evidence, selects uncertain pairs for simulated professional review, and retrains the classifier in batches. The Hybrid EMPI-style score is retained as a transparent non-ML baseline and fallback.
+The final method is AI-assisted active learning record linkage using FEBRL4.
+
+The workflow loads FEBRL4, preprocesses identity fields, creates candidate pairs with multi-pass blocking, compares records using field-level similarity features, trains ML classifiers, predicts match probability, selects uncertain pairs near p(match)=0.5 for simulated review, and retrains the classifier in batches.
+
+The final report-facing comparison is limited to:
+
+- Human-only Clerical Review Baseline
+- AI-only ML Matcher
+- AI + HITL Active Learning Matcher

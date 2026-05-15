@@ -90,8 +90,8 @@ def _predict_probability(model: object, x: pd.DataFrame) -> np.ndarray:
     return probabilities[:, 1]
 
 
-def _metrics(y_true: pd.Series, probabilities: np.ndarray, threshold: float = 0.5) -> dict[str, float]:
-    predicted = (probabilities >= threshold).astype(int)
+def _metrics(y_true: pd.Series, probabilities: np.ndarray, decision_cutoff: float = 0.5) -> dict[str, float]:
+    predicted = (probabilities >= decision_cutoff).astype(int)
     return {
         "Precision": precision_score(y_true, predicted, zero_division=0),
         "Recall": recall_score(y_true, predicted, zero_division=0),
@@ -109,17 +109,6 @@ def _seed_indices(y_pool: pd.Series, positive_count: int, negative_count: int, r
     seed_pos = rng.choice(positives, size=positive_count, replace=False)
     seed_neg = rng.choice(negatives, size=negative_count, replace=False)
     return list(seed_pos) + list(seed_neg)
-
-
-def _hybrid_baseline(test_pairs: pd.DataFrame, y_test: pd.Series) -> dict[str, float]:
-    probabilities = pd.to_numeric(test_pairs["model_score"], errors="coerce").fillna(0.0).to_numpy()
-    row = _metrics(y_test, probabilities)
-    row["Method"] = "Hybrid EMPI Score"
-    row["Reviewed pairs"] = 0
-    row["Runtime seconds"] = 0.0
-    row["Best CV F1-score"] = ""
-    row["Best parameters"] = "Non-ML weighted baseline"
-    return row
 
 
 def _tune_models(
@@ -161,11 +150,10 @@ def _run_model_comparison(
     y_train: pd.Series,
     x_test: pd.DataFrame,
     y_test: pd.Series,
-    test_pairs: pd.DataFrame,
     tuned_models: dict[str, object],
     tuning: pd.DataFrame,
 ) -> pd.DataFrame:
-    rows = [_hybrid_baseline(test_pairs, y_test)]
+    rows = []
     tuning_lookup = tuning.set_index("Method").to_dict("index")
     for name, model_template in tuned_models.items():
         start = time.perf_counter()
@@ -195,7 +183,7 @@ def _active_learning_loop(
     random_state: int,
     strategy: str,
 ) -> pd.DataFrame:
-    """Simulate batch active learning using FEBRL truth as the reviewer label source."""
+    """Select uncertain pairs near p(match)=0.5 and simulate reviewer labels with FEBRL truth."""
     rng = np.random.default_rng(random_state)
     labelled = list(seed_indices)
     unlabelled = [idx for idx in x_pool.index if idx not in labelled]
@@ -210,6 +198,7 @@ def _active_learning_loop(
             model.fit(x_pool.loc[labelled], y_pool.loc[labelled])
             if strategy == "Active Learning":
                 pool_probabilities = _predict_probability(model, x_pool.loc[unlabelled])
+                # Uncertainty sampling chooses pairs closest to p(match)=0.5.
                 uncertainty = np.abs(pool_probabilities - 0.5)
                 selected_positions = np.argsort(uncertainty)[:batch_size]
                 selected = [unlabelled[position] for position in selected_positions]
@@ -467,11 +456,11 @@ Model hyperparameters are tuned with `GridSearchCV` on the initial active-learni
 
 ## Interpretation
 
-The EMPI-inspired pipeline provides the healthcare-style record linkage structure: preprocessing, blocking, field-level comparison, threshold decisions, and human review.
+The final method uses FEBRL4, preprocessing, blocking, field-level comparison features, ML match probability, uncertainty sampling, simulated reviewer labels, and batch retraining.
 
-The Hybrid EMPI Score is retained as a transparent non-ML baseline and fallback scoring method. It is not presented as the main AI model.
+Uncertain pairs are selected for review because their predicted match probability is close to 0.5. The simulated reviewer label is then added to the training set before the next round.
 
-The Active Learning ML Matcher is the main proposed method because it uses simulated professional reviewer labels to improve future predictions over training rounds. The final report-facing evaluation is limited to Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.
+The final report-facing evaluation is limited to Human-only Clerical Review Baseline, AI-only ML Matcher, and AI + HITL Active Learning Matcher.
 """
     CONFIG.paths.active_learning_summary.write_text(text, encoding="utf-8")
 
@@ -511,7 +500,6 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         stratify=y,
         random_state=CONFIG.active_learning.random_state,
     )
-    test_pairs = pairs.loc[x_test.index]
     rng = np.random.default_rng(CONFIG.active_learning.random_state)
     seed = _seed_indices(
         y_train_pool,
@@ -530,7 +518,6 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         y_train_pool.loc[seed],
         x_test,
         y_test,
-        test_pairs,
         tuned_models,
         tuning,
     )
@@ -550,26 +537,11 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         CONFIG.active_learning.random_state,
         "Active Learning",
     )
-    random_rounds = _active_learning_loop(
-        best_model,
-        best_model_template,
-        x_train_pool,
-        y_train_pool,
-        x_test,
-        y_test,
-        CONFIG.active_learning.batch_size,
-        CONFIG.active_learning.rounds,
-        seed,
-        CONFIG.active_learning.random_state,
-        "Random Sampling",
-    )
-    random_vs_active = pd.concat([active_rounds, random_rounds], ignore_index=True)
     final_research = _final_research_evaluation(comparison, active_rounds, len(pairs), best_model)
 
     save_csv(tuning, CONFIG.paths.hyperparameter_tuning)
     save_csv(comparison, CONFIG.paths.model_comparison)
     save_csv(active_rounds, CONFIG.paths.active_learning_rounds)
-    save_csv(random_vs_active, CONFIG.paths.random_vs_active_learning)
     save_csv(final_research, CONFIG.paths.final_research_evaluation)
     _bar_chart(comparison, CONFIG.paths.model_comparison_f1_figure)
     _line_chart(
@@ -581,18 +553,6 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         y_max=1.001,
     )
     _error_reduction_chart(active_rounds, CONFIG.paths.active_learning_error_reduction_figure)
-    _line_chart(
-        random_vs_active,
-        CONFIG.paths.random_vs_active_learning_figure,
-        "Active learning vs random sampling",
-        "F1-score",
-    )
-    _line_chart(
-        random_vs_active,
-        CONFIG.paths.label_efficiency_curve_figure,
-        "Recall gained per labelled-pair budget",
-        "Recall",
-    )
     _final_research_chart(final_research, CONFIG.paths.final_research_evaluation_figure)
     _final_accuracy_chart(final_research, CONFIG.paths.final_accuracy_comparison_figure)
     _final_workload_chart(final_research, CONFIG.paths.final_workload_comparison_figure)
@@ -602,6 +562,5 @@ def run_active_learning_experiment() -> dict[str, pd.DataFrame]:
         "hyperparameter_tuning": tuning,
         "model_comparison": comparison,
         "active_learning_rounds": active_rounds,
-        "random_vs_active_learning": random_vs_active,
         "final_research_evaluation": final_research,
     }
